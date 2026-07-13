@@ -75,6 +75,28 @@ CHANNELS: dict[str, int] = {
     "Crime + Investigation": 14252,
     "Talking Pictures":  5168,
     "Discovery":         14935,
+    # Children's
+    "CBeebies":          4630,
+    "CBBC":              4631,
+    "Nickelodeon":       14937,
+    "Nick Jr":           14983,
+    "Cartoonito":        4236,
+    "Boomerang":         14845,
+    # Sports
+    "Sky Sports Main Event":      4929,
+    "Sky Sports Premier League":  5144,
+    "Sky Sports Football":        5238,
+    "Sky Sports Cricket":         4942,
+    "Sky Sports Action":          4945,
+    "Sky Sports Golf":            4811,
+    "Sky Sports F1":              5032,
+    "Sky Sports Racing":          4641,
+    "TNT Sports 1":               5086,
+    "TNT Sports 2":               5087,
+    "TNT Sports 3":               5166,
+    "TNT Sports 4":               4090,
+    "Eurosport":                  4925,
+    "Eurosport 2":                4794,
 }
 
 AUDIENCE_CATEGORY = 100   # All Individuals 4+
@@ -82,11 +104,9 @@ PRIMETIME_START   = 18 * 60   # 18:00 in minutes
 PRIMETIME_END     = 23 * 60   # 23:00 in minutes
 
 SKIP_RE = re.compile(
-    r"^(News|Weather|Newsnight|Question Time|Panorama|Breakfast|"
+    r"^(News( at|\s*$)| Weather|Newsnight|Question Time|Breakfast|"
     r"Good Morning|Loose Women|This Morning|Lorraine|Sign Zone|"
-    r"CBeebies|CBBC|Close|Test Card|Regional|Local|Junction|"
-    r"Presentation|EastEnders|Coronation Street|Emmerdale|Hollyoaks|"
-    r"Match of the Day|Football|Rugby|Cricket|Sport)",
+    r"Close|Test Card|Regional|Local|Junction|Presentation)",
     re.I,
 )
 

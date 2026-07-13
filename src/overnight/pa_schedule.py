@@ -43,9 +43,11 @@ PA_CHANNEL_IDS: dict[str, str] = {
     # Channel 5 family
     "5STAR":         "9512892c-d864-513c-b630-abb5df6b49f4",
     "5USA":          "4b75d2ae-672b-5d6f-b1d8-a0b2761fde3a",
-    # Sky
+    # Sky — PA still uses "Sky One" for what BARB calls Sky Max (same channel, rebranded 2022)
     "Sky Atlantic":      "5c56dba8-10dd-5b7e-aa9d-0317867ec2c9",
+    "Sky Max":           "f950225d-037e-56ad-bd49-7d210648a4c9",  # PA name: "Sky One"
     "Sky One":           "f950225d-037e-56ad-bd49-7d210648a4c9",
+    "Sky Showcase":      "37f6c091-46bc-51f2-b7ca-d8f2a2a361e8",  # PA has channel but sparse schedule
     "Sky Comedy":        "772bbf4c-ecaf-5ddf-9cb4-4fda07120da9",
     "Sky Witness":       "6e9dc822-69e5-5568-996a-ccce413791c2",
     "Sky History":       "9a4b80a8-7844-5be0-822f-98457b693eaa",
@@ -69,7 +71,29 @@ PA_CHANNEL_IDS: dict[str, str] = {
     "National Geographic": "af107972-5014-53b4-9cba-85802323e740",
     "Talking Pictures":  "98a1baa0-0534-5a59-af55-f7065f52bbd0",
     "Discovery":         "3d70e024-4435-5cec-b070-84ff71a8581e",
-    # ITVBe, Sky Max, Sky Showcase not in PA feed — BARB-only
+    # Children's
+    "CBeebies":          "27b85aec-51fc-5c55-a483-24ff7c70186b",
+    "CBBC":              "1f6ecdb4-985e-5ab3-adfc-022a5f63c6d1",
+    "Nickelodeon":       "3eabb761-96d7-5129-9d79-63f3128fe335",
+    "Nick Jr":           "7236be36-ddcb-5d5f-84b8-8e801f2b88fa",
+    "Cartoonito":        "f5342f90-2dff-5ad7-9d9a-5179111dda82",
+    "Boomerang":         "9b7f3740-1e34-5049-aa64-4726fccf7cc4",
+    # Sports
+    "Sky Sports Main Event":      "4a456557-c479-5190-bedc-ae061c5771c2",
+    "Sky Sports Premier League":  "7275c5c5-d73a-55ce-80b4-b9848d9d6e65",
+    "Sky Sports Football":        "42899af8-f668-579a-ae1f-eaf567de0665",
+    "Sky Sports Cricket":         "054dd24d-cedd-5a73-bfd6-0df4d6a25c41",
+    "Sky Sports Action":          "4e7565b2-292c-5b52-b76a-d27e0e573f3f",
+    "Sky Sports Golf":            "a679a3b0-ea3a-5359-9b29-f37f62280e41",
+    "Sky Sports F1":              "eb58ffa6-d395-56e1-a56b-df611c2ff32a",
+    "Sky Sports Racing":          "34d6515d-28f2-5640-834b-e5149f782736",
+    "TNT Sports 1":               "0e28fe4a-9473-5ea0-955d-eba6f0e8c705",
+    "TNT Sports 2":               "d90b2d7c-af93-5d8d-a176-66daf48c7a09",
+    "TNT Sports 3":               "2a4a9d4f-2cf7-5acf-81a8-4f3b474b844d",
+    "TNT Sports 4":               "ef96324e-87a9-5de8-bbbd-411d927549ca",
+    # ITVBe — not in PA feed, BARB-only
+    # Sky Showcase — PA channel registered but no schedule data yet, BARB-only
+    # Eurosport — not in PA feed, BARB-only
 }
 
 # Default catchup platforms per channel
@@ -115,6 +139,28 @@ CATCHUP: dict[str, str] = {
     "National Geographic": "Disney+",
     "Talking Pictures":  "Talking Pictures TV",
     "Discovery":         "Discovery+",
+    # Children's
+    "CBeebies":          "BBC iPlayer",
+    "CBBC":              "BBC iPlayer",
+    "Nickelodeon":       "Paramount+",
+    "Nick Jr":           "Paramount+",
+    "Cartoonito":        "Sky Go / Now",
+    "Boomerang":         "Boomerang",
+    # Sports
+    "Sky Sports Main Event":      "Sky Go / Now",
+    "Sky Sports Premier League":  "Sky Go / Now",
+    "Sky Sports Football":        "Sky Go / Now",
+    "Sky Sports Cricket":         "Sky Go / Now",
+    "Sky Sports Action":          "Sky Go / Now",
+    "Sky Sports Golf":            "Sky Go / Now",
+    "Sky Sports F1":              "Sky Go / Now",
+    "Sky Sports Racing":          "Sky Go / Now",
+    "TNT Sports 1":               "Discovery+",
+    "TNT Sports 2":               "Discovery+",
+    "TNT Sports 3":               "Discovery+",
+    "TNT Sports 4":               "Discovery+",
+    "Eurosport":                  "Discovery+",
+    "Eurosport 2":                "Discovery+",
 }
 
 LIVE_EVENT_RE = re.compile(
@@ -125,8 +171,8 @@ PRIMETIME_START = 18 * 60
 PRIMETIME_END   = 23 * 60
 
 SKIP_RE = re.compile(
-    r"^(News|Weather|Newsnight|Question Time|Breakfast|"
-    r"Good Morning|Loose Women|This Morning|Sign Zone|CBeebies|CBBC|"
+    r"^(News( at|\s*$)|Weather|Newsnight|Question Time|Breakfast|"
+    r"Good Morning|Loose Women|This Morning|Sign Zone|"
     r"Close|Test Card|Regional|Local|Junction|Presentation)",
     re.I,
 )
