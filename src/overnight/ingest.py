@@ -100,11 +100,12 @@ CHANNELS: dict[str, int] = {
 }
 
 AUDIENCE_CATEGORY = 100   # All Individuals 4+
-PRIMETIME_START   = 18 * 60   # 18:00 in minutes
-PRIMETIME_END     = 23 * 60   # 23:00 in minutes
+# top-ratings API returns programmeStartTime/EndTime in seconds from midnight
+PRIMETIME_START = 18 * 3600   # 18:00
+PRIMETIME_END   = 23 * 3600   # 23:00
 
 SKIP_RE = re.compile(
-    r"^(News( at|\s*$)| Weather|Newsnight|Question Time|Breakfast|"
+    r"^(News( at|\s*$)|BBC News|BBC NEWS|Weather|Newsnight|Question Time|Breakfast|"
     r"Good Morning|Loose Women|This Morning|Lorraine|Sign Zone|"
     r"Close|Test Card|Regional|Local|Junction|Presentation)",
     re.I,
@@ -136,12 +137,18 @@ def _get(path: str, params: dict, token_env: str = "OVERNIGHTS_API_TOKEN") -> di
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-def _hhmm_to_mins(hhmm: int) -> int:
-    return (hhmm // 100) * 60 + (hhmm % 100)
+def _secs_to_hhmm(secs: int) -> int:
+    """Seconds-from-midnight → HHMM int (for dayparts API slot format)."""
+    h = secs // 3600
+    m = (secs % 3600) // 60
+    return h * 100 + m
 
 
-def _hhmm_to_str(hhmm: int) -> str:
-    return f"{hhmm // 100:02d}:{hhmm % 100:02d}"
+def _secs_to_str(secs: int) -> str:
+    """Seconds-from-midnight → HH:MM display string."""
+    h = secs // 3600
+    m = (secs % 3600) // 60
+    return f"{h:02d}:{m:02d}"
 
 
 def _series_id(title: str, channel: str) -> str:
@@ -176,18 +183,21 @@ def fetch_top_ratings(tx_date: date, station_code: int) -> list[dict]:
 
 def fetch_live_vosdal(
     station_code: int,
-    start_hhmm: int,
-    end_hhmm: int,
+    start_secs: int,
+    end_secs: int,
     tx_date: date,
 ) -> tuple[float, float] | tuple[None, None]:
-    """Live+VOSDAL audience (000s) and share (%) for one episode."""
+    """Live+VOSDAL audience (000s) and share (%) for one episode.
+
+    startTime/endTime are seconds from midnight, as returned by top-ratings.
+    """
     try:
         data = _get(
             "/programme-report/performance",
             {
                 "stationCode":            station_code,
-                "startTime":              start_hhmm,
-                "endTime":                end_hhmm,
+                "startTime":              start_secs,
+                "endTime":                end_secs,
                 "dateOfTransmission":     tx_date.isoformat(),
                 "activityType":           "LIVE_VOSDAL",
                 "audienceCategoryNumber": AUDIENCE_CATEGORY,
@@ -208,17 +218,20 @@ def fetch_live_vosdal(
 def fetch_slot_average(
     station_code: int,
     dow: int,
-    start_hhmm: int,
-    end_hhmm: int,
+    start_secs: int,
+    end_secs: int,
     anchor_date: date,
 ) -> float | None:
     """8-week trailing average share for a channel/day-of-week/slot."""
-    key = (station_code, dow, start_hhmm, end_hhmm)
+    key = (station_code, dow, start_secs, end_secs)
     if key in _slot_cache:
         return _slot_cache[key]
 
     end_d   = anchor_date - timedelta(days=1)
     start_d = end_d - timedelta(weeks=8)
+    # dayparts API expects HHMM-HHMM format
+    start_hhmm = _secs_to_hhmm(start_secs)
+    end_hhmm   = _secs_to_hhmm(end_secs)
     slot    = f"{start_hhmm:04d}-{end_hhmm:04d}"
 
     try:
@@ -254,7 +267,7 @@ def ingest_trailing_window(
     Note: top-ratings has an ~8-day lag, so the most recent week is skipped.
     """
     today    = today or date.today()
-    end_date = today - timedelta(days=8)    # lag buffer
+    end_date = today - timedelta(days=10)   # top-ratings lag ~9-10 days
     start_dt = today - timedelta(days=days)
 
     universe: dict[str, list[EpisodeRecord]] = {}
@@ -269,14 +282,14 @@ def ingest_trailing_window(
 
             for show in shows:
                 title      = (show.get("txLogProgrammeName") or "").strip()
-                start_hhmm = show.get("programmeStartTime")
-                end_hhmm   = show.get("programmeEndTime")
+                start_secs = show.get("programmeStartTime")
+                end_secs   = show.get("programmeEndTime")
 
-                if not title or start_hhmm is None or end_hhmm is None:
+                if not title or start_secs is None or end_secs is None:
                     continue
                 if SKIP_RE.match(title):
                     continue
-                if not (PRIMETIME_START <= _hhmm_to_mins(start_hhmm) < PRIMETIME_END):
+                if not (PRIMETIME_START <= start_secs < PRIMETIME_END):
                     continue
 
                 key = (title.lower(), channel, current)
@@ -284,13 +297,13 @@ def ingest_trailing_window(
                     continue
                 seen.add(key)
 
-                aud, share = fetch_live_vosdal(station_code, start_hhmm, end_hhmm, current)
+                aud, share = fetch_live_vosdal(station_code, start_secs, end_secs, current)
                 if aud is None:
                     time.sleep(0.3)
                     continue
 
                 slot_avg = fetch_slot_average(
-                    station_code, _api_dow(current), start_hhmm, end_hhmm, today
+                    station_code, _api_dow(current), start_secs, end_secs, today
                 ) or 0.0
 
                 sid = _series_id(title, channel)
@@ -300,7 +313,7 @@ def ingest_trailing_window(
                     title              = title,
                     channel            = channel,
                     tx_date            = current,
-                    slot_start         = _hhmm_to_str(start_hhmm),
+                    slot_start         = _secs_to_str(start_secs),
                     audience           = aud,
                     share              = share,
                     slot_avg_share_8wk = slot_avg,
