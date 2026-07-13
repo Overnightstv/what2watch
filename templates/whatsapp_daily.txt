@@ -1,0 +1,5 @@
+{# WhatsApp compact template - the LLM's whatsapp_compact field is used
+   directly; this wrapper adds the reply hook. <= 110 words enforced by lint. #}
+{{ whatsapp_compact }}
+
+Reply GUIDE for the full briefing · PREFS to change your picks

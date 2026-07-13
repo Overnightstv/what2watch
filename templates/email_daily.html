@@ -1,0 +1,30 @@
+<!-- Daily edition template. Variables: {{ subject_line }}, {{ edition_date }},
+     items[]: {{ headline }}, {{ body }}, {{ chip }}, {{ channel }}, {{ tx_time }},
+     {{ image_url }}, {{ availability }}. Single column, 560px, inline styles for
+     email-client compatibility. Brand: coral #D85A30. -->
+<div style="max-width:560px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;color:#2C2C2A;">
+  <div style="background:#D85A30;padding:7px 20px;font-size:11px;letter-spacing:.1em;color:#FAECE7;text-transform:uppercase;">
+    {{ ticker_line }}
+  </div>
+  <div style="padding:28px 24px;">
+    <p style="margin:0 0 4px;font-size:22px;font-weight:bold;">What 2 Watch<span style="color:#D85A30;">.</span></p>
+    <p style="margin:0 0 24px;font-size:13px;color:#666;">{{ edition_date }} &middot; measured, not hype &middot; 60-second read</p>
+
+    <!-- repeat per item -->
+    <div style="border:1px solid #E5E2DA;border-radius:12px;overflow:hidden;margin-bottom:16px;">
+      <img src="{{ image_url }}" alt="{{ title }}" width="560" style="display:block;width:100%;height:auto;">
+      <div style="padding:14px 16px;">
+        <span style="display:inline-block;background:#FAECE7;color:#712B13;border-radius:12px;padding:3px 10px;font-size:11px;font-weight:bold;">{{ chip }}</span>
+        <p style="margin:8px 0 2px;font-size:16px;font-weight:bold;">{{ headline }}</p>
+        <p style="margin:0 0 6px;font-size:13px;color:#555;line-height:1.55;">{{ body }}</p>
+        <p style="margin:0;font-size:12px;color:#999;">{{ channel }} &middot; {{ tx_time }} &middot; {{ availability }}</p>
+      </div>
+    </div>
+    <!-- end repeat -->
+
+    <p style="margin:24px 0 0;padding-top:14px;border-top:1px solid #E5E2DA;font-size:12px;color:#999;line-height:1.6;">
+      Measured, not hype<span style="color:#D85A30;">.</span> We never publish figures &mdash; we tell you what they mean.<br>
+      <a href="{{ unsubscribe_url }}" style="color:#999;">Unsubscribe</a> &middot; Forward to a friend who always asks &ldquo;anything good on?&rdquo;
+    </p>
+  </div>
+</div>

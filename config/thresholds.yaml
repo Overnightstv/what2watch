@@ -1,0 +1,55 @@
+# All editorial thresholds in one place. Spec sections 4-5.
+# Change via PR only - the engine's judgement must be inspectable and reversible (spec 9).
+
+metrics:
+  momentum:
+    w_wow_delta: 0.4
+    w_slot_relative: 0.4
+    w_streak: 0.2
+    normalisation_window_days: 28
+  loyalty:
+    w_retention: 0.5
+    w_consistency: 0.3
+    w_catchup: 0.2
+  affinity:
+    min_cell_x: 50          # panel homes who watched X (HARD FLOOR - spec 4.4, never override)
+    min_cell_xy: 30         # of whom also basis of Y estimate
+    min_lift: 1.5
+    window_weeks: 8
+    watched_minutes: 15
+
+gates:
+  banker:
+    min_momentum: 70
+    min_reach: 40
+  rising:
+    min_streak_weeks: 3
+    max_reach: 35
+    min_loyalty: 60
+    hours_ahead: 48
+  binge_verdict:
+    min_loyalty: 75
+    min_episodes: 3
+    completed_within_days: 7
+  live_event:
+    min_comparable_percentile: 60
+    national_moment_percentile: 90   # overrides sport-averse segment suppression
+  weekly_gem:
+    min_loyalty: 70
+    max_reach: 30
+    min_lift: 1.5
+  skip_warning:
+    min_decline_streak: 3            # plus manual hype flag
+
+slots:
+  max_items_per_day: 4
+  min_items_per_day: 2               # below this -> quiet_day edition
+  priority: [banker, live_event, rising, binge_verdict]
+  max_mentions_per_7_days: 2
+  banker_consecutive_cap: 3
+  binge_verdicts_per_week: 2
+  skip_warnings_per_week: 1
+
+compliance:
+  max_published_rank: 5
+  banned_number_nouns: [m, million, viewers, share, "%", percent, homes, audience of]
