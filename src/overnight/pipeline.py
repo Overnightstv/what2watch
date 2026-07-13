@@ -1,56 +1,106 @@
-"""Nightly orchestration skeleton. Spec section 2.
+"""Nightly orchestration. Spec section 2.
 
-The TODO markers are the wiring points for Claude Code against the
-live environment: BARB store, PA feed, subscriber DB, ESP/WhatsApp.
-Everything above them is already implemented and tested.
+Run once per day after overnights land (~10:00 BST).
+1. Ingest trailing 28 days of BARB data -> EpisodeRecords
+2. Compute series metrics
+3. Fetch PA forward schedule + ID matching
+4. Select edition (single cluster for MVP)
+5. Generate copy via Claude
+6. Send edition email (or lint-blocked alert)
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+import sys
+from datetime import datetime
 from pathlib import Path
 
 import yaml
 
-from overnight.matching.id_match import IdMatcher
+from overnight.ingest import ingest_trailing_window
 from overnight.metrics.scores import compute_series_metrics
+from overnight.pa_schedule import build_schedule
 from overnight.selection.engine import SelectionEngine
 from overnight.copygen.generate import generate_copy
+from overnight.deliver import send_edition, send_lint_alert
 
-CFG = yaml.safe_load((Path(__file__).parents[2] / "config" / "thresholds.yaml").read_text())
+CFG = yaml.safe_load(
+    (Path(__file__).parents[2] / "config" / "thresholds.yaml").read_text()
+)
 
 
-def run_nightly(now: datetime | None = None) -> None:
-    now = now or datetime.now()
+def run_nightly(now: datetime | None = None, dry_run: bool = False) -> None:
+    now   = now or datetime.now()
+    today = now.date()
 
-    # 1. Ingest overnights -> EpisodeRecords
-    # TODO(wiring): pull from the existing Overnights.tv BARB store
-    universe = {}  # series_id -> list[EpisodeRecord], trailing 28 days
+    print(f"\n── What 2 Watch pipeline  {today.isoformat()} ─────────────────\n")
 
-    # 2. Derived metrics per series
+    # 1. BARB ingest — trailing 28 days
+    print("Step 1: Ingesting BARB data…")
+    universe = ingest_trailing_window(days=28, today=today)
+    if not universe:
+        print("  No episode data returned — aborting.")
+        sys.exit(1)
+
+    # 2. Series metrics
+    print("\nStep 2: Computing series metrics…")
     metrics = {
-        sid: compute_series_metrics(eps, universe, CFG, computed_at=now.date())
+        sid: compute_series_metrics(eps, universe, CFG, computed_at=today)
         for sid, eps in universe.items()
     }
+    print(f"  {len(metrics)} series scored")
 
-    # 3. PA forward schedule + ID matching
-    # TODO(wiring): fetch PA schedule (tonight + 14d) and imagery refs
-    matcher = IdMatcher(barb_index=[])  # TODO(wiring): build from BARB store
-    schedule = []  # list[ScheduleItem] with series_id resolved via matcher
+    # 3. PA schedule + ID matching (tonight + 7 days forward)
+    print("\nStep 3: Fetching PA forward schedule…")
+    schedule = build_schedule(today, universe, lookahead_days=7)
+    if not schedule:
+        print("  No schedule items — aborting.")
+        sys.exit(1)
 
-    # 4. Selection per cluster
-    engine = SelectionEngine(CFG, history=[])  # TODO(wiring): load 7-day send history
-    clusters = ["default"]  # TODO(wiring): load cluster ids
-    for cluster_id in clusters:
-        candidates = engine.build_candidates(schedule, metrics, now)
-        edition = engine.allocate(candidates, edition_date=now.date(), cluster_id=cluster_id)
+    # 4. Selection — single cluster for MVP
+    print("\nStep 4: Running selection engine…")
+    engine     = SelectionEngine(CFG, history=[])
+    candidates = engine.build_candidates(schedule, metrics, now)
+    edition    = engine.allocate(candidates, edition_date=today, cluster_id="default")
 
-        # 5. Copy generation + lint (blocks to review on any issue)
-        result = generate_copy(edition)
-        if result["status"] == "blocked":
-            # TODO(wiring): push to review queue with result["lint"]
-            continue
-        # TODO(wiring): render templates, queue for human review, send at 17:30
+    if edition.quiet_day:
+        print(f"  Quiet day — only {len(edition.items)} item(s) selected.")
+    else:
+        print(f"  {len(edition.items)} item(s): "
+              + ", ".join(a.title for a in edition.items))
+
+    if not edition.items:
+        print("  Nothing to send today.")
+        return
+
+    # 5. Copy generation + lint
+    print("\nStep 5: Generating copy…")
+    result = generate_copy(edition)
+
+    if result["status"] == "blocked":
+        print(f"  ✗ Blocked by lint: {result['lint']}")
+        if not dry_run:
+            send_lint_alert(edition, result["lint"], today)
+        return
+
+    copy = result["copy"]
+    print(f"  ✓ \"{copy.get('subject_line')}\"")
+
+    # 6. Send
+    if dry_run:
+        print("\n── DRY RUN ──────────────────────────────────────────────────")
+        print(f"Subject: {copy.get('subject_line')}")
+        for item in copy.get("items", []):
+            print(f"\n  [{item.get('chip')}] {item.get('headline')}")
+            print(f"  {item.get('body')}")
+        print(f"\nWhatsApp:\n{copy.get('whatsapp_compact')}")
+        print("─" * 60)
+    else:
+        print("\nStep 6: Sending edition…")
+        send_edition(edition, copy, today)
+
+    print("\n── Done ─────────────────────────────────────────────────────\n")
 
 
 if __name__ == "__main__":
-    run_nightly()
+    dry = "--dry-run" in sys.argv
+    run_nightly(dry_run=dry)
