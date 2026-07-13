@@ -22,13 +22,59 @@ load_dotenv(Path(__file__).parents[3] / ".env")
 
 BASE_URL = os.getenv("OVERNIGHTS_BASE_URL", "https://api.on-tv.tech/api")
 
-# Total channel codes (BBC has no Total — use national code)
+# Station codes — Total where available (better data), standard otherwise.
+# BBC has no Total feed so uses national codes (10, 20).
 CHANNELS: dict[str, int] = {
-    "BBC1":      10,
-    "BBC2":      20,
-    "ITV1":      10030,
-    "Channel 4": 10042,
-    "Channel 5": 10050,
+    # Main five
+    "BBC One":       10,
+    "BBC Two":       20,
+    "ITV":           10030,
+    "Channel 4":     10042,
+    "Channel 5":     10050,
+    # BBC
+    "BBC Three":     4515,
+    "BBC Four":      4632,
+    # ITV family
+    "ITV2":          14979,
+    "ITV3":          14328,
+    "ITV4":          14392,
+    "ITVBe":         15148,
+    # Channel 4 family
+    "E4":            14874,
+    "More4":         14382,
+    "Film4":         14977,
+    # Channel 5 family
+    "5STAR":         14265,
+    "5USA":          14266,
+    # Sky
+    "Sky Atlantic":      15016,
+    "Sky Max":           5315,
+    "Sky One":           4924,
+    "Sky Showcase":      15313,
+    "Sky Comedy":        5289,
+    "Sky Witness":       14939,
+    "Sky History":       14961,
+    "Sky Arts":          14702,
+    "Sky Documentaries": 5296,
+    "Sky Nature":        5295,
+    "Sky Crime":         14340,
+    # UKTV / Discovery
+    "Dave":          14829,
+    "Gold":          14934,
+    "W":             14041,
+    "Yesterday":     14684,
+    "Drama":         15081,
+    "Alibi":         14842,
+    "Eden":          14971,
+    # Other mainstream entertainment
+    "Comedy Central":    14957,
+    "Quest":             14073,
+    "Really":            4349,
+    "TLC":               15077,
+    "National Geographic": 14964,
+    "Crime + Investigation": 14252,
+    "Talking Pictures":  5168,
+    "Discovery":         14935,
 }
 
 AUDIENCE_CATEGORY = 100   # All Individuals 4+

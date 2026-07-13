@@ -21,22 +21,100 @@ load_dotenv(Path(__file__).parents[3] / ".env")
 
 PA_BASE = os.getenv("PA_TV_BASE_URL", "https://tv.api.pressassociation.io/v2")
 
-# PA channel UUIDs for the five main channels
+# PA channel UUIDs — covers all channels in the BARB ingest
 PA_CHANNEL_IDS: dict[str, str] = {
-    "BBC1":      "78bd54a7-6883-575e-a84f-f328dc424979",
-    "BBC2":      "7a6cd877-f7c0-5d40-8862-0ad24318b712",
-    "ITV1":      "f0eac74d-2245-57c9-9dfa-d8a54da0c066",
-    "Channel 4": "fd66055a-5bc7-51e8-8421-df88e60c98b3",
-    "Channel 5": "bbc2a081-fc85-5c05-8ff0-4438cc97de2c",
+    # Main five
+    "BBC One":       "78bd54a7-6883-575e-a84f-f328dc424979",
+    "BBC Two":       "7a6cd877-f7c0-5d40-8862-0ad24318b712",
+    "ITV":           "f0eac74d-2245-57c9-9dfa-d8a54da0c066",
+    "Channel 4":     "fd66055a-5bc7-51e8-8421-df88e60c98b3",
+    "Channel 5":     "bbc2a081-fc85-5c05-8ff0-4438cc97de2c",
+    # BBC
+    "BBC Three":     "fea6e9fd-c98c-5209-849f-a486ac600ff7",
+    "BBC Four":      "f2fb2e91-2578-5975-a7cc-dd048186ea52",
+    # ITV family
+    "ITV2":          "64b0d836-b2b1-5a9c-a077-99fbd5dff799",
+    "ITV3":          "8dc66a04-043a-5c8e-aab3-a32343bd2016",
+    "ITV4":          "76c14546-b2bd-51d4-9760-4b24820686e2",
+    # Channel 4 family
+    "E4":            "b5442f3a-c482-50d1-96d5-f25fd16f3e37",
+    "More4":         "d4e9648c-12e6-586a-9265-f2878a610884",
+    "Film4":         "51b4a470-009c-5a13-bb8d-1f1090796c3c",
+    # Channel 5 family
+    "5STAR":         "9512892c-d864-513c-b630-abb5df6b49f4",
+    "5USA":          "4b75d2ae-672b-5d6f-b1d8-a0b2761fde3a",
+    # Sky
+    "Sky Atlantic":      "5c56dba8-10dd-5b7e-aa9d-0317867ec2c9",
+    "Sky One":           "f950225d-037e-56ad-bd49-7d210648a4c9",
+    "Sky Comedy":        "772bbf4c-ecaf-5ddf-9cb4-4fda07120da9",
+    "Sky Witness":       "6e9dc822-69e5-5568-996a-ccce413791c2",
+    "Sky History":       "9a4b80a8-7844-5be0-822f-98457b693eaa",
+    "Sky Arts":          "eb5f203b-bdc5-5d30-a700-5cabb4d6a085",
+    "Sky Documentaries": "d905c697-22eb-5d35-8e98-84bd08c3ad90",
+    "Sky Nature":        "c7cb366a-a0d0-5f8e-a1e3-828ae6a2a336",
+    "Sky Crime":         "af9e4bd4-1414-5ef4-b77a-50461be96967",
+    # UKTV
+    "Dave":          "715f4b2b-b1a9-5ce4-aaa0-7de29db1bbfe",
+    "Gold":          "83a00f21-a841-5d34-8566-522c17c13253",
+    "W":             "51cb8909-a482-5fdf-9570-9e147e485568",
+    "Yesterday":     "d1c48f93-3ae1-5c35-9338-31d5f7227c7b",
+    "Drama":         "30050daf-5792-5ca4-90f9-f2f776be9d1f",
+    "Alibi":         "e0d7df16-df4b-5bc6-bd59-25711dc11018",
+    "Eden":          "e111fb1a-e3f4-5e78-bc1b-54343dbe2f5f",
+    # Other mainstream
+    "Comedy Central":    "b13e2396-4327-569c-8e7a-18cead510f39",
+    "Quest":             "c0ad2509-49f0-508b-aaa3-9693382e1d31",
+    "Really":            "fd22499a-bc88-5836-a639-7fad80310d7f",
+    "TLC":               "a48438f4-a999-5da5-8799-6761e3728cec",
+    "National Geographic": "af107972-5014-53b4-9cba-85802323e740",
+    "Talking Pictures":  "98a1baa0-0534-5a59-af55-f7065f52bbd0",
+    "Discovery":         "3d70e024-4435-5cec-b070-84ff71a8581e",
+    # ITVBe, Sky Max, Sky Showcase not in PA feed — BARB-only
 }
 
 # Default catchup platforms per channel
 CATCHUP: dict[str, str] = {
-    "BBC1":      "BBC iPlayer",
-    "BBC2":      "BBC iPlayer",
-    "ITV1":      "ITVX",
-    "Channel 4": "Channel 4",
-    "Channel 5": "My5",
+    "BBC One":       "BBC iPlayer",
+    "BBC Two":       "BBC iPlayer",
+    "BBC Three":     "BBC iPlayer",
+    "BBC Four":      "BBC iPlayer",
+    "ITV":           "ITVX",
+    "ITV2":          "ITVX",
+    "ITV3":          "ITVX",
+    "ITV4":          "ITVX",
+    "ITVBe":         "ITVX",
+    "Channel 4":     "Channel 4",
+    "E4":            "Channel 4",
+    "More4":         "Channel 4",
+    "Film4":         "Channel 4",
+    "Channel 5":     "My5",
+    "5STAR":         "My5",
+    "5USA":          "My5",
+    "Sky Atlantic":      "Sky Go / Now",
+    "Sky Max":           "Sky Go / Now",
+    "Sky One":           "Sky Go / Now",
+    "Sky Showcase":      "Sky Go / Now",
+    "Sky Comedy":        "Sky Go / Now",
+    "Sky Witness":       "Sky Go / Now",
+    "Sky History":       "Sky Go / Now",
+    "Sky Arts":          "Sky Go / Now",
+    "Sky Documentaries": "Sky Go / Now",
+    "Sky Nature":        "Sky Go / Now",
+    "Sky Crime":         "Sky Go / Now",
+    "Dave":          "UKTV Play",
+    "Gold":          "UKTV Play",
+    "W":             "UKTV Play",
+    "Yesterday":     "UKTV Play",
+    "Drama":         "UKTV Play",
+    "Alibi":         "UKTV Play",
+    "Eden":          "UKTV Play",
+    "Comedy Central":    "Paramount+",
+    "Quest":             "Discovery+",
+    "Really":            "Discovery+",
+    "TLC":               "Discovery+",
+    "National Geographic": "Disney+",
+    "Talking Pictures":  "Talking Pictures TV",
+    "Discovery":         "Discovery+",
 }
 
 LIVE_EVENT_RE = re.compile(
@@ -47,11 +125,9 @@ PRIMETIME_START = 18 * 60
 PRIMETIME_END   = 23 * 60
 
 SKIP_RE = re.compile(
-    r"^(News|Weather|Newsnight|Question Time|Panorama|Breakfast|"
+    r"^(News|Weather|Newsnight|Question Time|Breakfast|"
     r"Good Morning|Loose Women|This Morning|Sign Zone|CBeebies|CBBC|"
-    r"Close|Test Card|Regional|Local|Junction|Presentation|"
-    r"EastEnders|Coronation Street|Emmerdale|Hollyoaks|"
-    r"Match of the Day|Football|Rugby|Cricket|Sport)",
+    r"Close|Test Card|Regional|Local|Junction|Presentation)",
     re.I,
 )
 
