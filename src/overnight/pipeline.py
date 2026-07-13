@@ -11,14 +11,15 @@ Run once per day after overnights land (~10:00 BST).
 from __future__ import annotations
 
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
 
 from overnight.ingest import ingest_trailing_window
 from overnight.metrics.scores import compute_series_metrics
-from overnight.pa_schedule import build_schedule
+from overnight.pa_schedule import build_schedule, CATCHUP
+from overnight.models import EpisodeRecord, ScheduleItem
 from overnight.selection.engine import SelectionEngine
 from overnight.copygen.generate import generate_copy
 from overnight.deliver import send_edition, send_lint_alert
@@ -28,7 +29,38 @@ CFG = yaml.safe_load(
 )
 
 
-def run_nightly(now: datetime | None = None, dry_run: bool = False) -> None:
+def _synthetic_schedule(
+    universe: dict[str, list[EpisodeRecord]],
+    today: datetime,
+) -> list[ScheduleItem]:
+    """Build a schedule from the BARB universe without calling PA.
+
+    Takes the most recent episode of each series and projects it as if
+    airing tonight at its usual slot time. Used when --no-pa is set.
+    """
+    items = []
+    for sid, eps in universe.items():
+        latest = eps[-1]
+        try:
+            h, m = latest.slot_start.split(":")
+            tx = today.replace(hour=int(h), minute=int(m), second=0, microsecond=0,
+                               tzinfo=timezone.utc)
+        except Exception:
+            tx = today.replace(hour=21, minute=0, second=0, microsecond=0,
+                               tzinfo=timezone.utc)
+        items.append(ScheduleItem(
+            pa_id        = sid,
+            series_id    = sid,
+            title        = latest.title,
+            channel      = latest.channel,
+            tx           = tx,
+            genre        = "",
+            availability = [CATCHUP.get(latest.channel, "")],
+        ))
+    return items
+
+
+def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool = False) -> None:
     now   = now or datetime.now()
     today = now.date()
 
@@ -49,12 +81,17 @@ def run_nightly(now: datetime | None = None, dry_run: bool = False) -> None:
     }
     print(f"  {len(metrics)} series scored")
 
-    # 3. PA schedule + ID matching (tonight + 7 days forward)
-    print("\nStep 3: Fetching PA forward schedule…")
-    schedule = build_schedule(today, universe, lookahead_days=7)
-    if not schedule:
-        print("  No schedule items — aborting.")
-        sys.exit(1)
+    # 3. Forward schedule — PA API or synthetic fallback
+    if no_pa:
+        print("\nStep 3: Building synthetic schedule (--no-pa)…")
+        schedule = _synthetic_schedule(universe, now)
+        print(f"  {len(schedule)} synthetic items from BARB universe")
+    else:
+        print("\nStep 3: Fetching PA forward schedule…")
+        schedule = build_schedule(today, universe, lookahead_days=7)
+        if not schedule:
+            print("  No schedule items — aborting.")
+            sys.exit(1)
 
     # 4. Selection — single cluster for MVP
     print("\nStep 4: Running selection engine…")
@@ -102,5 +139,6 @@ def run_nightly(now: datetime | None = None, dry_run: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    dry = "--dry-run" in sys.argv
-    run_nightly(dry_run=dry)
+    dry   = "--dry-run" in sys.argv
+    no_pa = "--no-pa"   in sys.argv
+    run_nightly(dry_run=dry, no_pa=no_pa)
