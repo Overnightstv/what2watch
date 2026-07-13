@@ -61,7 +61,7 @@ def _synthetic_schedule(
 
 
 def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool = False) -> None:
-    now   = now or datetime.now()
+    now   = now or datetime.now(timezone.utc)
     today = now.date()
 
     print(f"\n── What 2 Watch pipeline  {today.isoformat()} ─────────────────\n")
