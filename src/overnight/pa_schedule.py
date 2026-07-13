@@ -9,6 +9,9 @@ from __future__ import annotations
 import os
 import re
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
+_UK_TZ = ZoneInfo("Europe/London")
 from pathlib import Path
 
 import requests
@@ -203,9 +206,10 @@ def _extract_image(item: dict) -> str | None:
 
 
 def _parse_tx(raw: str) -> datetime | None:
-    """Parse ISO8601 TX time from PA, return UTC datetime."""
+    """Parse ISO8601 TX time from PA, return UK-local datetime."""
     try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        utc_dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        return utc_dt.astimezone(_UK_TZ)
     except Exception:
         return None
 
@@ -217,7 +221,7 @@ def fetch_pa_schedule(tx_date: date) -> list[dict]:
         print("  [pa] No PA_TV_API_KEY — skipping schedule fetch")
         return []
 
-    # 17:00–23:30 BST = 16:00–22:30 UTC (conservative window covering GMT and BST)
+    # Fetch 16:00–23:30 UTC = 17:00–00:30 BST / 16:00–23:30 GMT — covers UK primetime year-round
     start = f"{tx_date.isoformat()}T16:00:00Z"
     end   = f"{tx_date.isoformat()}T23:30:00Z"
 
@@ -291,12 +295,12 @@ def build_schedule(
             if not title or SKIP_RE.match(title):
                 continue
 
-            tx_raw = item.get("startTime") or item.get("start") or ""
-            tx_dt  = _parse_tx(tx_raw)
+            tx_raw = item.get("dateTime") or item.get("startTime") or item.get("start") or ""
+            tx_dt  = _parse_tx(tx_raw)  # returns UK local time
             if tx_dt is None:
                 continue
 
-            tx_mins = tx_dt.hour * 60 + tx_dt.minute
+            tx_mins = tx_dt.hour * 60 + tx_dt.minute  # UK local minutes from midnight
             if not (PRIMETIME_START <= tx_mins < PRIMETIME_END):
                 continue
 
