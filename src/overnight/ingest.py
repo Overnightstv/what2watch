@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 
 from overnight.models import EpisodeRecord
 
-load_dotenv(Path(__file__).parents[3] / ".env")
+load_dotenv(Path(__file__).parents[2] / ".env")
 
 BASE_URL = os.getenv("OVERNIGHTS_BASE_URL", "https://api.on-tv.tech/api")
 

@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from overnight.matching.id_match import IdMatcher
 from overnight.models import EpisodeRecord, ScheduleItem
 
-load_dotenv(Path(__file__).parents[3] / ".env")
+load_dotenv(Path(__file__).parents[2] / ".env")
 
 PA_BASE = os.getenv("PA_TV_BASE_URL", "https://tv.api.pressassociation.io/v2")
 

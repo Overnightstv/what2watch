@@ -18,9 +18,9 @@ from jinja2 import Environment, FileSystemLoader
 
 from overnight.models import AlertItem, Edition
 
-load_dotenv(Path(__file__).parents[3] / ".env")
+load_dotenv(Path(__file__).parents[2] / ".env")
 
-TEMPLATES_DIR = Path(__file__).parents[3] / "templates"
+TEMPLATES_DIR = Path(__file__).parents[2] / "templates"
 SEND_TO       = os.getenv("SEND_TO_EMAIL", "")
 SMTP_USER     = os.getenv("SMTP_USER", "support@overnights.tv")
 SMTP_PASSWORD = os.getenv("SMTP_APP_PASSWORD", "")
