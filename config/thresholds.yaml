@@ -53,3 +53,28 @@ slots:
 compliance:
   max_published_rank: 5
   banned_number_nouns: [m, million, viewers, share, "%", percent, homes, audience of]
+
+clusters:
+  # Interest clusters subscribers choose at signup.
+  # label: shown in UI. description: used in copy generation prompt.
+  drama:
+    label: Drama
+    description: "crime, thriller, period drama, prestige TV"
+  factual:
+    label: Factual
+    description: "documentaries, history, science, nature"
+  entertainment:
+    label: Entertainment
+    description: "reality TV, talent shows, game shows, light entertainment"
+  comedy:
+    label: Comedy
+    description: "sitcoms, stand-up, panel shows, sketch comedy"
+  sport:
+    label: Sport
+    description: "live sport, sports documentaries, analysis"
+  kids:
+    label: Kids & Family
+    description: "children's programming, family viewing"
+  arts:
+    label: Arts & Culture
+    description: "arts, music, opera, culture documentaries"

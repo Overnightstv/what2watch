@@ -10,6 +10,7 @@ Run once per day after overnights land (~10:00 BST).
 """
 from __future__ import annotations
 
+import pickle
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,7 @@ from overnight.models import EpisodeRecord, ScheduleItem
 from overnight.selection.engine import SelectionEngine
 from overnight.copygen.generate import generate_copy
 from overnight.deliver import send_edition, send_lint_alert
+from overnight.clustering.genre_classifier import build_cluster_index, classify_series
 
 CFG = yaml.safe_load(
     (Path(__file__).parents[2] / "config" / "thresholds.yaml").read_text()
@@ -60,18 +62,32 @@ def _synthetic_schedule(
     return items
 
 
-def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool = False) -> None:
+CACHE_PATH = Path(__file__).parents[2] / "data" / "universe_cache.pkl"
+
+
+def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool = False, cache: bool = False) -> None:
     now   = now or datetime.now(timezone.utc)
     today = now.date()
 
     print(f"\n── What 2 Watch pipeline  {today.isoformat()} ─────────────────\n")
 
-    # 1. BARB ingest — trailing 28 days
+    # 1. BARB ingest — trailing 28 days (or load from cache)
     print("Step 1: Ingesting BARB data…")
-    universe = ingest_trailing_window(days=28, today=today)
-    if not universe:
-        print("  No episode data returned — aborting.")
-        sys.exit(1)
+    if cache and CACHE_PATH.exists():
+        print(f"  Loading from cache: {CACHE_PATH}")
+        with open(CACHE_PATH, "rb") as f:
+            universe = pickle.load(f)
+        print(f"  {len(universe)} series loaded from cache")
+    else:
+        universe = ingest_trailing_window(days=28, today=today)
+        if not universe:
+            print("  No episode data returned — aborting.")
+            sys.exit(1)
+        if cache:
+            CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with open(CACHE_PATH, "wb") as f:
+                pickle.dump(universe, f)
+            print(f"  Cache saved → {CACHE_PATH}")
 
     # 2. Series metrics
     print("\nStep 2: Computing series metrics…")
@@ -93,47 +109,63 @@ def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool 
             print("  No schedule items — aborting.")
             sys.exit(1)
 
-    # 4. Selection — single cluster for MVP
-    print("\nStep 4: Running selection engine…")
-    engine     = SelectionEngine(CFG, history=[])
-    candidates = engine.build_candidates(schedule, metrics, now)
-    edition    = engine.allocate(candidates, edition_date=today, cluster_id="default")
+    # 4. Build cluster index — which series belong to which interest cluster
+    print("\nStep 4: Building cluster index…")
+    cluster_index = build_cluster_index(universe)
+    clusters = CFG.get("clusters", {})
+    print(f"  {len(clusters)} clusters: {', '.join(clusters)}")
+    for cid, sids in cluster_index.items():
+        print(f"    {cid}: {len(sids)} series")
 
-    if edition.quiet_day:
-        print(f"  Quiet day — only {len(edition.items)} item(s) selected.")
-    else:
-        print(f"  {len(edition.items)} item(s): "
-              + ", ".join(a.title for a in edition.items))
+    # 5. Selection — one edition per cluster
+    print("\nStep 5: Running selection engine per cluster…")
+    engine = SelectionEngine(CFG, history=[])
+    all_candidates = engine.build_candidates(schedule, metrics, now)
 
-    if not edition.items:
-        print("  Nothing to send today.")
-        return
+    editions = {}
+    for cluster_id in clusters:
+        cluster_series = set(cluster_index.get(cluster_id, []))
+        # Filter candidates to only those in this cluster
+        cluster_candidates = [c for c in all_candidates if c.series_id in cluster_series]
+        edition = engine.allocate(cluster_candidates, edition_date=today, cluster_id=cluster_id)
+        editions[cluster_id] = edition
+        label = clusters[cluster_id]["label"]
+        if edition.quiet_day:
+            print(f"  {label}: quiet day ({len(edition.items)} item(s) qualify)")
+        else:
+            print(f"  {label}: {len(edition.items)} item(s) — "
+                  + ", ".join(a.title for a in edition.items))
 
-    # 5. Copy generation + lint
-    print("\nStep 5: Generating copy…")
-    result = generate_copy(edition)
+    # 6. Copy generation + delivery per cluster
+    print("\nStep 6: Generating copy…", flush=True)
+    for cluster_id, edition in editions.items():
+        label = clusters[cluster_id]["label"]
+        if not edition.items:
+            if dry_run:
+                print(f"\n── {label.upper()} — no send today ──")
+            continue
 
-    if result["status"] == "blocked":
-        print(f"  ✗ Blocked by lint: {result['lint']}")
-        if not dry_run:
-            send_lint_alert(edition, result["lint"], today)
-        return
+        result = generate_copy(edition)
 
-    copy = result["copy"]
-    print(f"  ✓ \"{copy.get('subject_line')}\"")
+        if result["status"] == "blocked":
+            print(f"  ✗ {label}: blocked by lint — {result['lint']}")
+            if not dry_run:
+                send_lint_alert(edition, result["lint"], today)
+            continue
 
-    # 6. Send
-    if dry_run:
-        print("\n── DRY RUN ──────────────────────────────────────────────────")
-        print(f"Subject: {copy.get('subject_line')}")
-        for item in copy.get("items", []):
-            print(f"\n  [{item.get('chip')}] {item.get('headline')}")
-            print(f"  {item.get('body')}")
-        print(f"\nWhatsApp:\n{copy.get('whatsapp_compact')}")
-        print("─" * 60)
-    else:
-        print("\nStep 6: Sending edition…")
-        send_edition(edition, copy, today)
+        copy = result["copy"]
+        print(f"  ✓ {label}: \"{copy.get('subject_line')}\"")
+
+        if dry_run:
+            print(f"\n── {label.upper()} ──────────────────────────────────────────────")
+            print(f"Subject: {copy.get('subject_line')}")
+            for item in copy.get("items", []):
+                print(f"\n  [{item.get('chip')}] {item.get('headline')}")
+                print(f"  {item.get('body')}")
+            print(f"\nWhatsApp:\n{copy.get('whatsapp_compact')}")
+            print("─" * 60)
+        else:
+            send_edition(edition, copy, today)
 
     print("\n── Done ─────────────────────────────────────────────────────\n")
 
@@ -141,4 +173,11 @@ def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool 
 if __name__ == "__main__":
     dry   = "--dry-run" in sys.argv
     no_pa = "--no-pa"   in sys.argv
-    run_nightly(dry_run=dry, no_pa=no_pa)
+    cache = "--cache"   in sys.argv
+    try:
+        run_nightly(dry_run=dry, no_pa=no_pa, cache=cache)
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        print(f"\n✗ Pipeline failed: {exc}", flush=True)
+        sys.exit(1)
