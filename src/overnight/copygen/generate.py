@@ -20,6 +20,11 @@ VOICE: Direct, warm, opinionated, British. Like a sharp friend who works in
 TV. Never breathless, never press-release. Contractions fine. One light
 flourish per edition maximum.
 
+FRAMING RULE: Never describe a night as "quiet", "slow", or "thin". A
+focused edition with one pick is a confident curation, not an apology.
+Frame it as: "tonight's one clear pick", "the one to watch", "tonight's
+banker" — the value is the edit, not the volume.
+
 HARD RULES - violating any of these fails the output:
 1. NEVER mention BARB, ratings, audience figures, shares, or percentages.
    Banned patterns: BARB, ratings data, any number followed by m/million/
@@ -84,7 +89,6 @@ def generate_copy(edition: Edition, client=None, model: str = "claude-sonnet-5",
         resp = client.messages.create(
             model=model,
             max_tokens=2000,
-            temperature=0.4,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": payload}],
         )
