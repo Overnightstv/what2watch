@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import csv
+import imaplib
 import os
-import smtplib
+import time
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -102,15 +103,21 @@ def send_welcome(to_email: str, clusters: list[str]) -> None:
     html = html.replace("{{ change_cluster_url }}", "#")
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = "You're signed up — What 2 Watch"
+    msg["Subject"] = f"You're signed up — What 2 Watch [{to_email}]"
     msg["From"]    = f"{FROM_NAME} <{FROM_EMAIL}>"
     msg["To"]      = to_email
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
-        smtp.starttls()
-        smtp.login(SMTP_USER, SMTP_PASS)
-        smtp.sendmail(FROM_EMAIL, to_email, msg.as_string())
+    # Save to Drafts so we can review before sending during testing
+    with imaplib.IMAP4_SSL("imap.gmail.com") as imap:
+        imap.login(SMTP_USER, SMTP_PASS)
+        imap.append(
+            "[Gmail]/Drafts",
+            "\\Draft",
+            imaplib.Time2Internaldate(time.time()),
+            msg.as_bytes(),
+        )
+    print(f"Welcome email saved to Drafts for {to_email}", flush=True)
 
 
 # ── routes ────────────────────────────────────────────────────────────────────
