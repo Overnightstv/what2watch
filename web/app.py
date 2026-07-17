@@ -91,25 +91,30 @@ def send_welcome(to_email: str, clusters: list[str]) -> None:
 
 @app.route("/subscribe", methods=["POST"])
 def subscribe():
-    data     = request.get_json(silent=True) or {}
-    email    = (data.get("email") or "").strip().lower()
-    clusters = [c.strip() for c in (data.get("clusters") or []) if c.strip()]
-    whatsapp = bool(data.get("whatsapp", False))
-
-    if not email or "@" not in email:
-        return jsonify({"error": "valid email required"}), 400
-
     try:
-        save_subscriber(email, clusters, whatsapp)
-    except Exception as exc:
-        print(f"CSV write failed for {email}: {exc}", flush=True)
+        data     = request.get_json(silent=True) or {}
+        email    = (data.get("email") or "").strip().lower()
+        clusters = [c.strip() for c in (data.get("clusters") or []) if c.strip()]
+        whatsapp = bool(data.get("whatsapp", False))
 
-    try:
-        send_welcome(email, clusters)
-    except Exception as exc:
-        print(f"Welcome email failed for {email}: {exc}", flush=True)
+        if not email or "@" not in email:
+            return jsonify({"error": "valid email required"}), 400
 
-    return jsonify({"ok": True}), 200
+        try:
+            save_subscriber(email, clusters, whatsapp)
+        except Exception as exc:
+            print(f"CSV write failed for {email}: {exc}", flush=True)
+
+        try:
+            send_welcome(email, clusters)
+        except Exception as exc:
+            print(f"Welcome email failed for {email}: {exc}", flush=True)
+
+        return jsonify({"ok": True}), 200
+    except Exception as exc:
+        import traceback
+        print(traceback.format_exc(), flush=True)
+        return jsonify({"error": str(exc)}), 500
 
 
 @app.route("/create-checkout-session", methods=["POST"])
