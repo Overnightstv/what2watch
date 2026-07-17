@@ -69,6 +69,10 @@ def mark_whatsapp_paid(email: str) -> None:
 # ── email ─────────────────────────────────────────────────────────────────────
 
 def send_welcome(to_email: str, clusters: list[str]) -> None:
+    if not SMTP_PASS or SMTP_PASS in ("replace_me", "your Gmail app password"):
+        print(f"SMTP not configured — skipping welcome email to {to_email}", flush=True)
+        return
+
     cluster_label = " · ".join(c.title() for c in clusters) if clusters else "All"
     html = TEMPLATE_FILE.read_text()
     html = html.replace("{{ cluster_label }}", cluster_label)
@@ -81,7 +85,7 @@ def send_welcome(to_email: str, clusters: list[str]) -> None:
     msg["To"]      = to_email
     msg.attach(MIMEText(html, "html"))
 
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as smtp:
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
         smtp.starttls()
         smtp.login(SMTP_USER, SMTP_PASS)
         smtp.sendmail(FROM_EMAIL, to_email, msg.as_string())
