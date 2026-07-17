@@ -235,7 +235,8 @@ def test_email():
     try:
         with imaplib.IMAP4_SSL("imap.gmail.com") as imap:
             imap.login(SMTP_USER, SMTP_PASS)
-            folders = [f.decode() for _, _, f in imap.list()[1]]
+            raw = imap.list()[1]
+            folders = [item.decode() if isinstance(item, bytes) else str(item) for item in raw]
         return jsonify({"ok": True, "user": SMTP_USER, "folders": folders})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc), "user": SMTP_USER})
