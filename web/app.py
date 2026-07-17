@@ -35,9 +35,9 @@ STRIPE_CANCEL_URL          = os.environ.get("STRIPE_CANCEL_URL",  "http://localh
 
 # ── subscriber storage ────────────────────────────────────────────────────────
 
-def save_subscriber(email: str, clusters: list[str], whatsapp: bool) -> bool:
+def save_subscriber(email: str, clusters: list[str], whatsapp: bool, whatsapp_number: str = "") -> bool:
     """Upsert subscriber. Returns True if new, False if updated."""
-    header = ["email", "clusters", "whatsapp_upgrade", "signed_up_at"]
+    header = ["email", "clusters", "whatsapp_upgrade", "whatsapp_number", "signed_up_at"]
 
     if not SUBSCRIBERS_FILE.exists():
         with open(SUBSCRIBERS_FILE, "w", newline="") as f:
@@ -49,18 +49,21 @@ def save_subscriber(email: str, clusters: list[str], whatsapp: bool) -> bool:
     if existing:
         existing["clusters"]         = "|".join(clusters)
         existing["whatsapp_upgrade"] = "pending" if whatsapp else existing.get("whatsapp_upgrade", "no")
+        if whatsapp_number:
+            existing["whatsapp_number"] = whatsapp_number
         with open(SUBSCRIBERS_FILE, "w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=header)
+            w = csv.DictWriter(f, fieldnames=header, extrasaction="ignore")
             w.writeheader()
             w.writerows(rows)
         return False
     else:
         with open(SUBSCRIBERS_FILE, "a", newline="") as f:
             csv.DictWriter(f, fieldnames=header).writerow({
-                "email":             email,
-                "clusters":          "|".join(clusters),
-                "whatsapp_upgrade":  "pending" if whatsapp else "no",
-                "signed_up_at":      datetime.now(timezone.utc).isoformat(),
+                "email":            email,
+                "clusters":         "|".join(clusters),
+                "whatsapp_upgrade": "pending" if whatsapp else "no",
+                "whatsapp_number":  whatsapp_number,
+                "signed_up_at":     datetime.now(timezone.utc).isoformat(),
             })
         return True
 
@@ -116,17 +119,18 @@ def send_welcome(to_email: str, clusters: list[str]) -> None:
 @app.route("/subscribe", methods=["POST"])
 def subscribe():
     try:
-        data     = request.get_json(silent=True) or {}
-        email    = (data.get("email") or "").strip().lower()
-        clusters = [c.strip() for c in (data.get("clusters") or []) if c.strip()]
-        whatsapp = bool(data.get("whatsapp", False))
+        data             = request.get_json(silent=True) or {}
+        email            = (data.get("email") or "").strip().lower()
+        clusters         = [c.strip() for c in (data.get("clusters") or []) if c.strip()]
+        whatsapp         = bool(data.get("whatsapp", False))
+        whatsapp_number  = (data.get("whatsapp_number") or "").strip()
 
         if not email or "@" not in email:
             return jsonify({"error": "valid email required"}), 400
 
         is_new = True
         try:
-            is_new = save_subscriber(email, clusters, whatsapp)
+            is_new = save_subscriber(email, clusters, whatsapp, whatsapp_number)
         except Exception as exc:
             print(f"CSV write failed for {email}: {exc}", flush=True)
 
