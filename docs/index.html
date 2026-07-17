@@ -306,9 +306,10 @@ button[type="submit"]:disabled { opacity: .5; cursor: default; transform: none; 
       </div>
 
       <div id="wa-number-row" style="display:none;margin-bottom:14px;">
-        <input type="tel" id="wa-number" placeholder="Your WhatsApp number e.g. +44 7700 900123"
+        <input type="tel" id="wa-number" placeholder="+44 7700 900123"
           style="width:100%;padding:13px 16px;border:1.5px solid #25D366;border-radius:12px;font-size:15px;font-family:inherit;color:var(--i);background:var(--c);outline:none;">
-        <p style="font-size:12px;color:var(--if);margin-top:6px;">Include country code · we'll only message you your nightly pick</p>
+        <p style="font-size:12px;color:var(--if);margin-top:6px;">UK mobile only · we'll only message you your nightly pick</p>
+        <p id="wa-number-warn" style="display:none;font-size:13px;color:#DC2626;margin-top:6px;">Please enter a valid UK mobile number (e.g. +44 7700 900123 or 07700 900123)</p>
       </div>
 
       <p class="fine">No noise. Unsubscribe any time. We never share your address.</p>
@@ -406,13 +407,25 @@ button[type="submit"]:disabled { opacity: .5; cursor: default; transform: none; 
     const btn       = document.getElementById('submit-btn');
     const errMsg    = document.getElementById('error-msg');
 
-    const clusterWarn = document.getElementById('cluster-warn');
+    const clusterWarn  = document.getElementById('cluster-warn');
+    const waNumberWarn = document.getElementById('wa-number-warn');
     if (!email) return;
     if (clusters.length === 0) {
       clusterWarn.style.display = 'block';
       return;
     }
     clusterWarn.style.display = 'none';
+
+    if (waEnabled) {
+      const digits = waNumber.replace(/[\s\-().]/g, '');
+      const validUK = /^(\+447\d{9}|07\d{9})$/.test(digits);
+      if (!validUK) {
+        waNumberWarn.style.display = 'block';
+        document.getElementById('wa-number').focus();
+        return;
+      }
+      waNumberWarn.style.display = 'none';
+    }
 
     btn.disabled     = true;
     btn.textContent  = 'Signing up…';
