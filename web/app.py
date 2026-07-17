@@ -218,6 +218,25 @@ def health():
     return jsonify({"ok": True})
 
 
+@app.route("/unsubscribe", methods=["POST"])
+def unsubscribe():
+    data  = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return jsonify({"error": "valid email required"}), 400
+    if SUBSCRIBERS_FILE.exists():
+        rows = list(csv.DictReader(SUBSCRIBERS_FILE.open()))
+        filtered = [r for r in rows if r["email"] != email]
+        if len(filtered) < len(rows):
+            header = ["email", "clusters", "whatsapp_upgrade", "signed_up_at"]
+            with open(SUBSCRIBERS_FILE, "w", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=header)
+                w.writeheader()
+                w.writerows(filtered)
+            print(f"Unsubscribed: {email}", flush=True)
+    return jsonify({"ok": True})
+
+
 @app.route("/admin/subscribers")
 def admin_subscribers():
     if request.args.get("token") != os.environ.get("ADMIN_TOKEN", "w2w-admin"):

@@ -333,6 +333,18 @@ button[type="submit"]:disabled { opacity: .5; cursor: default; transform: none; 
   </div>
 </main>
 
+<footer style="border-top:1px solid var(--r);padding:24px 44px;text-align:center;">
+  <button id="unsub-toggle" style="background:none;border:none;font-size:12px;color:var(--if);cursor:pointer;text-decoration:underline;">Unsubscribe</button>
+  <div id="unsub-panel" style="display:none;margin-top:16px;max-width:400px;margin-left:auto;margin-right:auto;">
+    <p style="font-size:13px;color:var(--im);margin-bottom:12px;">Enter your email and we'll remove you from all future sends.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <input type="email" id="unsub-email" placeholder="your@email.com" style="flex:1;min-width:180px;padding:10px 14px;border:1.5px solid var(--r);border-radius:10px;font-size:14px;font-family:inherit;color:var(--i);background:var(--c);outline:none;">
+      <button id="unsub-btn" style="padding:10px 20px;background:var(--i);color:var(--g);border:none;border-radius:10px;font-size:14px;font-family:var(--font-head);font-weight:700;cursor:pointer;white-space:nowrap;">Unsubscribe</button>
+    </div>
+    <p id="unsub-msg" style="display:none;font-size:13px;color:var(--im);margin-top:10px;"></p>
+  </div>
+</footer>
+
 <script>
   const BACKEND_URL = 'https://web-production-20a30.up.railway.app';
 
@@ -425,6 +437,35 @@ button[type="submit"]:disabled { opacity: .5; cursor: default; transform: none; 
       btn.disabled    = false;
       btn.textContent = 'Start watching';
       errMsg.style.display = 'block';
+    }
+  });
+
+  // Unsubscribe
+  document.getElementById('unsub-toggle').addEventListener('click', () => {
+    const panel = document.getElementById('unsub-panel');
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  });
+  document.getElementById('unsub-btn').addEventListener('click', async () => {
+    const email  = document.getElementById('unsub-email').value.trim();
+    const msg    = document.getElementById('unsub-msg');
+    const btn    = document.getElementById('unsub-btn');
+    if (!email) return;
+    btn.disabled = true;
+    btn.textContent = 'Removing…';
+    try {
+      await fetch(`${BACKEND_URL}/unsubscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      msg.textContent = "Done — you won't hear from us again.";
+      msg.style.display = 'block';
+      btn.style.display = 'none';
+    } catch {
+      btn.disabled = false;
+      btn.textContent = 'Unsubscribe';
+      msg.textContent = 'Something went wrong — please try again.';
+      msg.style.display = 'block';
     }
   });
 </script>
