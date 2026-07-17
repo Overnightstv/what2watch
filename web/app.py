@@ -16,7 +16,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-SUBSCRIBERS_FILE = Path(__file__).parent / "subscribers.csv"
+SUBSCRIBERS_FILE = Path(os.environ.get("SUBSCRIBERS_FILE", "/tmp/subscribers.csv"))
 TEMPLATE_FILE    = Path(__file__).parents[1] / "templates" / "email_welcome.html"
 
 SMTP_HOST  = os.environ.get("SMTP_HOST",  "smtp.gmail.com")
@@ -99,7 +99,10 @@ def subscribe():
     if not email or "@" not in email:
         return jsonify({"error": "valid email required"}), 400
 
-    save_subscriber(email, clusters, whatsapp)
+    try:
+        save_subscriber(email, clusters, whatsapp)
+    except Exception as exc:
+        print(f"CSV write failed for {email}: {exc}", flush=True)
 
     try:
         send_welcome(email, clusters)
