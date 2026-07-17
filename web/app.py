@@ -228,26 +228,5 @@ def admin_subscribers():
     return jsonify({"count": len(rows), "subscribers": rows})
 
 
-@app.route("/admin/dedupe", methods=["POST"])
-def admin_dedupe():
-    if request.args.get("token") != os.environ.get("ADMIN_TOKEN", "w2w-admin"):
-        return jsonify({"error": "unauthorised"}), 401
-    if not SUBSCRIBERS_FILE.exists():
-        return jsonify({"ok": True, "removed": 0})
-    rows = list(csv.DictReader(SUBSCRIBERS_FILE.open()))
-    seen, deduped = set(), []
-    for row in rows:
-        if row["email"] not in seen:
-            seen.add(row["email"])
-            deduped.append(row)
-    removed = len(rows) - len(deduped)
-    header = ["email", "clusters", "whatsapp_upgrade", "signed_up_at"]
-    with open(SUBSCRIBERS_FILE, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=header)
-        w.writeheader()
-        w.writerows(deduped)
-    return jsonify({"ok": True, "removed": removed, "remaining": len(deduped)})
-
-
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
