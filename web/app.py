@@ -228,6 +228,19 @@ def health():
     return jsonify({"ok": True})
 
 
+@app.route("/admin/test-email")
+def test_email():
+    if request.args.get("token") != os.environ.get("ADMIN_TOKEN", "w2w-admin"):
+        return jsonify({"error": "unauthorised"}), 401
+    try:
+        with imaplib.IMAP4_SSL("imap.gmail.com") as imap:
+            imap.login(SMTP_USER, SMTP_PASS)
+            folders = [f.decode() for _, _, f in imap.list()[1]]
+        return jsonify({"ok": True, "user": SMTP_USER, "folders": folders})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc), "user": SMTP_USER})
+
+
 @app.route("/unsubscribe", methods=["POST"])
 def unsubscribe():
     data  = request.get_json(silent=True) or {}
