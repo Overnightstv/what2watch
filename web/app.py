@@ -233,11 +233,23 @@ def test_email():
     if request.args.get("token") != os.environ.get("ADMIN_TOKEN", "w2w-admin"):
         return jsonify({"error": "unauthorised"}), 401
     try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "What 2 Watch — IMAP test draft"
+        msg["From"]    = SMTP_USER
+        msg["To"]      = SMTP_USER
+        msg.attach(MIMEText("This is a test draft from the What 2 Watch backend.", "plain"))
         with imaplib.IMAP4_SSL("imap.gmail.com") as imap:
             imap.login(SMTP_USER, SMTP_PASS)
-            raw = imap.list()[1]
-            folders = [item.decode() if isinstance(item, bytes) else str(item) for item in raw]
-        return jsonify({"ok": True, "user": SMTP_USER, "folders": folders})
+            for folder in ("[Gmail]/Drafts", "[Google Mail]/Drafts", "Drafts"):
+                try:
+                    result = imap.append(folder, "\\Draft",
+                                         imaplib.Time2Internaldate(time.time()),
+                                         msg.as_bytes())
+                    if result[0] == "OK":
+                        return jsonify({"ok": True, "user": SMTP_USER, "folder": folder})
+                except Exception:
+                    continue
+        return jsonify({"ok": False, "error": "No writable Drafts folder found", "user": SMTP_USER})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc), "user": SMTP_USER})
 
