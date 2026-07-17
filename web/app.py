@@ -48,9 +48,8 @@ def save_subscriber(email: str, clusters: list[str], whatsapp: bool, whatsapp_nu
 
     if existing:
         existing["clusters"]         = "|".join(clusters)
-        existing["whatsapp_upgrade"] = "pending" if whatsapp else existing.get("whatsapp_upgrade", "no")
-        if whatsapp_number:
-            existing["whatsapp_number"] = whatsapp_number
+        existing["whatsapp_upgrade"] = "pending" if whatsapp else "no"
+        existing["whatsapp_number"]  = whatsapp_number if whatsapp else ""
         with open(SUBSCRIBERS_FILE, "w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=header, extrasaction="ignore")
             w.writeheader()
