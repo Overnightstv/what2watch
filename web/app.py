@@ -35,14 +35,34 @@ STRIPE_CANCEL_URL          = os.environ.get("STRIPE_CANCEL_URL",  "http://localh
 
 # ── subscriber storage ────────────────────────────────────────────────────────
 
-def save_subscriber(email: str, clusters: list[str], whatsapp: bool) -> None:
-    new_file = not SUBSCRIBERS_FILE.exists()
-    with open(SUBSCRIBERS_FILE, "a", newline="") as f:
-        w = csv.writer(f)
-        if new_file:
-            w.writerow(["email", "clusters", "whatsapp_upgrade", "signed_up_at"])
-        w.writerow([email, "|".join(clusters), "pending" if whatsapp else "no",
-                    datetime.now(timezone.utc).isoformat()])
+def save_subscriber(email: str, clusters: list[str], whatsapp: bool) -> bool:
+    """Upsert subscriber. Returns True if new, False if updated."""
+    header = ["email", "clusters", "whatsapp_upgrade", "signed_up_at"]
+
+    if not SUBSCRIBERS_FILE.exists():
+        with open(SUBSCRIBERS_FILE, "w", newline="") as f:
+            csv.writer(f).writerow(header)
+
+    rows = list(csv.DictReader(SUBSCRIBERS_FILE.open()))
+    existing = next((r for r in rows if r["email"] == email), None)
+
+    if existing:
+        existing["clusters"]         = "|".join(clusters)
+        existing["whatsapp_upgrade"] = "pending" if whatsapp else existing.get("whatsapp_upgrade", "no")
+        with open(SUBSCRIBERS_FILE, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=header)
+            w.writeheader()
+            w.writerows(rows)
+        return False
+    else:
+        with open(SUBSCRIBERS_FILE, "a", newline="") as f:
+            csv.DictWriter(f, fieldnames=header).writerow({
+                "email":             email,
+                "clusters":          "|".join(clusters),
+                "whatsapp_upgrade":  "pending" if whatsapp else "no",
+                "signed_up_at":      datetime.now(timezone.utc).isoformat(),
+            })
+        return True
 
 
 def mark_whatsapp_paid(email: str) -> None:
@@ -104,17 +124,19 @@ def subscribe():
         if not email or "@" not in email:
             return jsonify({"error": "valid email required"}), 400
 
+        is_new = True
         try:
-            save_subscriber(email, clusters, whatsapp)
+            is_new = save_subscriber(email, clusters, whatsapp)
         except Exception as exc:
             print(f"CSV write failed for {email}: {exc}", flush=True)
 
-        try:
-            send_welcome(email, clusters)
-        except Exception as exc:
-            print(f"Welcome email failed for {email}: {exc}", flush=True)
+        if is_new:
+            try:
+                send_welcome(email, clusters)
+            except Exception as exc:
+                print(f"Welcome email failed for {email}: {exc}", flush=True)
 
-        return jsonify({"ok": True}), 200
+        return jsonify({"ok": True, "new": is_new}), 200
     except Exception as exc:
         import traceback
         print(traceback.format_exc(), flush=True)

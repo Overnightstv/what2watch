@@ -387,11 +387,20 @@ button[type="submit"]:disabled { opacity: .5; cursor: default; transform: none; 
 
       if (!res.ok) throw new Error('server error');
 
+      const data = await res.json();
+      const isNew = data.new !== false;
+
       document.getElementById('form-section').style.display = 'none';
-      document.getElementById('success').style.display = 'block';
+      const successEl = document.getElementById('success');
+      successEl.style.display = 'block';
+      successEl.querySelector('h2').textContent = isNew ? "You're in." : "Preferences updated.";
+      successEl.querySelector('p').textContent = isNew
+        ? "We'll be in touch when something's worth watching. Keep an eye on your inbox — and your spam folder just in case."
+        : "We've updated your preferences. You'll hear from us when something worth watching is on.";
+
       if (waEnabled) {
         document.getElementById('success-wa-confirm').style.display = 'block';
-      } else {
+      } else if (isNew) {
         document.getElementById('success-wa-upsell').style.display = 'block';
       }
     } catch {
