@@ -4,7 +4,6 @@ from __future__ import annotations
 import csv
 import imaplib
 import os
-import time
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -109,14 +108,10 @@ def send_welcome(to_email: str, clusters: list[str]) -> None:
     msg.attach(MIMEText(html, "html"))
 
     # Save to Drafts so we can review before sending during testing
-    with imaplib.IMAP4_SSL("imap.gmail.com") as imap:
-        imap.login(SMTP_USER, SMTP_PASS)
-        imap.append(
-            "[Gmail]/Drafts",
-            "\\Draft",
-            imaplib.Time2Internaldate(time.time()),
-            msg.as_bytes(),
-        )
+    conn = imaplib.IMAP4_SSL("imap.gmail.com")
+    conn.login(SMTP_USER, SMTP_PASS)
+    conn.append("[Gmail]/Drafts", "\\Draft", None, msg.as_bytes())
+    conn.logout()
     print(f"Welcome email saved to Drafts for {to_email}", flush=True)
 
 
@@ -238,18 +233,11 @@ def test_email():
         msg["From"]    = SMTP_USER
         msg["To"]      = SMTP_USER
         msg.attach(MIMEText("This is a test draft from the What 2 Watch backend.", "plain"))
-        with imaplib.IMAP4_SSL("imap.gmail.com") as imap:
-            imap.login(SMTP_USER, SMTP_PASS)
-            for folder in ("[Gmail]/Drafts", "[Google Mail]/Drafts", "Drafts"):
-                try:
-                    result = imap.append(folder, "\\Draft",
-                                         imaplib.Time2Internaldate(time.time()),
-                                         msg.as_bytes())
-                    if result[0] == "OK":
-                        return jsonify({"ok": True, "user": SMTP_USER, "folder": folder})
-                except Exception:
-                    continue
-        return jsonify({"ok": False, "error": "No writable Drafts folder found", "user": SMTP_USER})
+        conn = imaplib.IMAP4_SSL("imap.gmail.com")
+        conn.login(SMTP_USER, SMTP_PASS)
+        conn.append("[Gmail]/Drafts", "\\Draft", None, msg.as_bytes())
+        conn.logout()
+        return jsonify({"ok": True, "user": SMTP_USER})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc), "user": SMTP_USER})
 
