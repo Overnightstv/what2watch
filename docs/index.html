@@ -243,6 +243,16 @@ button[type="submit"]:disabled { opacity: .5; cursor: default; transform: none; 
   color: #DC2626;
   margin-top: 8px;
 }
+.cluster-warn {
+  display: none;
+  font-size: 13px;
+  color: #B45309;
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+}
 
 @media (max-width: 520px) {
   nav { padding: 18px 20px; }
@@ -273,6 +283,8 @@ button[type="submit"]:disabled { opacity: .5; cursor: default; transform: none; 
       <div class="pill" data-cluster="kids">Kids &amp; Family</div>
       <div class="pill" data-cluster="arts">Arts &amp; Culture</div>
     </div>
+
+    <p class="cluster-warn" id="cluster-warn">Pick at least one category so we know what to send you.</p>
 
     <form id="signup-form" novalidate>
       <div class="form-row">
@@ -372,7 +384,13 @@ button[type="submit"]:disabled { opacity: .5; cursor: default; transform: none; 
     const btn      = document.getElementById('submit-btn');
     const errMsg   = document.getElementById('error-msg');
 
+    const clusterWarn = document.getElementById('cluster-warn');
     if (!email) return;
+    if (clusters.length === 0) {
+      clusterWarn.style.display = 'block';
+      return;
+    }
+    clusterWarn.style.display = 'none';
 
     btn.disabled     = true;
     btn.textContent  = 'Signing up…';
