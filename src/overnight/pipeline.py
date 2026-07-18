@@ -23,7 +23,7 @@ from overnight.pa_schedule import build_schedule, CATCHUP
 from overnight.models import EpisodeRecord, ScheduleItem
 from overnight.selection.engine import SelectionEngine
 from overnight.copygen.generate import generate_copy
-from overnight.deliver import send_edition, send_lint_alert
+from overnight.deliver import send_edition, send_lint_alert, draft_subscriber_editions
 from overnight.clustering.genre_classifier import build_cluster_index, classify_series
 
 CFG = yaml.safe_load(
@@ -138,6 +138,7 @@ def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool 
 
     # 6. Copy generation + delivery per cluster
     print("\nStep 6: Generating copy…", flush=True)
+    editions_with_copy: dict = {}
     for cluster_id, edition in editions.items():
         label = clusters[cluster_id]["label"]
         if not edition.items:
@@ -155,6 +156,7 @@ def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool 
 
         copy = result["copy"]
         print(f"  ✓ {label}: \"{copy.get('subject_line')}\"")
+        editions_with_copy[cluster_id] = (edition, copy)
 
         if dry_run:
             print(f"\n── {label.upper()} ──────────────────────────────────────────────")
@@ -166,6 +168,10 @@ def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool 
             print("─" * 60)
         else:
             send_edition(edition, copy, today)
+
+    if not dry_run and editions_with_copy:
+        print("\nStep 7: Saving subscriber drafts…", flush=True)
+        draft_subscriber_editions(editions_with_copy, today)
 
     print("\n── Done ─────────────────────────────────────────────────────\n")
 

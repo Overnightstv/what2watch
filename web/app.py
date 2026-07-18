@@ -271,5 +271,16 @@ def admin_subscribers():
     return jsonify({"count": len(rows), "subscribers": rows})
 
 
+@app.route("/admin/subscribers/export")
+def export_subscribers():
+    if request.args.get("token") != os.environ.get("ADMIN_TOKEN", "w2w-admin"):
+        return jsonify({"error": "unauthorised"}), 401
+    if not SUBSCRIBERS_FILE.exists():
+        return jsonify({"subscribers": []})
+    rows = list(csv.DictReader(SUBSCRIBERS_FILE.open()))
+    active = [r for r in rows if r.get("whatsapp_upgrade") != "unsubscribed"]
+    return jsonify({"count": len(active), "subscribers": active})
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=5001)
