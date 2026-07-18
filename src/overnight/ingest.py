@@ -24,6 +24,7 @@ BASE_URL = os.getenv("OVERNIGHTS_BASE_URL", "https://api.on-tv.tech/api")
 
 # Station codes — Total where available (better data), standard otherwise.
 # BBC has no Total feed so uses national codes (10, 20).
+# Trimmed to channels that realistically produce primetime picks.
 CHANNELS: dict[str, int] = {
     # Main five
     "BBC One":       10,
@@ -31,48 +32,40 @@ CHANNELS: dict[str, int] = {
     "ITV":           10030,
     "Channel 4":     10042,
     "Channel 5":     10050,
-    # BBC
+    # BBC family
     "BBC Three":     4515,
     "BBC Four":      4632,
     # ITV family
     "ITV2":          14979,
     "ITV3":          14328,
     "ITV4":          14392,
-    "ITVBe":         15148,
     # Channel 4 family
     "E4":            14874,
     "More4":         14382,
     "Film4":         14977,
     # Channel 5 family
     "5STAR":         14265,
-    "5USA":          14266,
-    # Sky
+    # Sky drama / entertainment
     "Sky Atlantic":      15016,
     "Sky Max":           5315,
-    "Sky One":           4924,
     "Sky Showcase":      15313,
     "Sky Comedy":        5289,
     "Sky Witness":       14939,
-    "Sky History":       14961,
     "Sky Arts":          14702,
     "Sky Documentaries": 5296,
     "Sky Nature":        5295,
+    "Sky History":       14961,
     "Sky Crime":         14340,
-    # UKTV / Discovery
+    # UKTV
     "Dave":          14829,
     "Gold":          14934,
     "W":             14041,
-    "Yesterday":     14684,
     "Drama":         15081,
     "Alibi":         14842,
     "Eden":          14971,
-    # Other mainstream entertainment
+    # Other entertainment
     "Comedy Central":    14957,
-    "Quest":             14073,
-    "Really":            4349,
-    "TLC":               15077,
     "National Geographic": 14964,
-    "Crime + Investigation": 14252,
     "Talking Pictures":  5168,
     "Discovery":         14935,
     # Children's
@@ -80,23 +73,12 @@ CHANNELS: dict[str, int] = {
     "CBBC":              4631,
     "Nickelodeon":       14937,
     "Nick Jr":           14983,
-    "Cartoonito":        4236,
-    "Boomerang":         14845,
-    # Sports
+    # Sport (main event channels only)
     "Sky Sports Main Event":      4929,
     "Sky Sports Premier League":  5144,
     "Sky Sports Football":        5238,
-    "Sky Sports Cricket":         4942,
-    "Sky Sports Action":          4945,
-    "Sky Sports Golf":            4811,
-    "Sky Sports F1":              5032,
-    "Sky Sports Racing":          4641,
     "TNT Sports 1":               5086,
     "TNT Sports 2":               5087,
-    "TNT Sports 3":               5166,
-    "TNT Sports 4":               4090,
-    "Eurosport":                  4925,
-    "Eurosport 2":                4794,
 }
 
 AUDIENCE_CATEGORY = 100   # All Individuals 4+
@@ -256,20 +238,12 @@ def fetch_slot_average(
 
 # ── Main ingest ────────────────────────────────────────────────────────────────
 
-def ingest_trailing_window(
-    days: int = 28,
-    today: date | None = None,
+def _fetch_date_range(
+    start_dt: date,
+    end_date: date,
+    anchor_date: date,
 ) -> dict[str, list[EpisodeRecord]]:
-    """
-    Pull trailing `days` of primetime data across all 5 main channels.
-    Returns: series_id → list[EpisodeRecord], sorted oldest-first.
-
-    Note: top-ratings has an ~8-day lag, so the most recent week is skipped.
-    """
-    today    = today or date.today()
-    end_date = today - timedelta(days=10)   # top-ratings lag ~9-10 days
-    start_dt = today - timedelta(days=days)
-
+    """Fetch primetime data for [start_dt, end_date] across all channels."""
     universe: dict[str, list[EpisodeRecord]] = {}
     seen: set[tuple] = set()
 
@@ -303,7 +277,7 @@ def ingest_trailing_window(
                     continue
 
                 slot_avg = fetch_slot_average(
-                    station_code, _api_dow(current), start_secs, end_secs, today
+                    station_code, _api_dow(current), start_secs, end_secs, anchor_date
                 ) or 0.0
 
                 sid = _series_id(title, channel)
@@ -327,5 +301,61 @@ def ingest_trailing_window(
         recs.sort(key=lambda r: r.tx_date)
 
     total = sum(len(v) for v in universe.values())
-    print(f"  [ingest] Complete — {len(universe)} series, {total} episodes")
+    print(f"  [ingest] Fetched — {len(universe)} series, {total} episodes")
     return universe
+
+
+def ingest_trailing_window(
+    days: int = 28,
+    today: date | None = None,
+) -> dict[str, list[EpisodeRecord]]:
+    """Full ingest of trailing `days` — used on first run when no cache exists."""
+    today    = today or date.today()
+    end_date = today - timedelta(days=10)
+    start_dt = today - timedelta(days=days)
+    return _fetch_date_range(start_dt, end_date, anchor_date=today)
+
+
+def ingest_incremental(
+    existing: dict[str, list[EpisodeRecord]],
+    days: int = 28,
+    today: date | None = None,
+) -> dict[str, list[EpisodeRecord]]:
+    """Load existing universe, fetch only missing days, prune to `days` window.
+
+    On an empty existing dict falls back to ingest_trailing_window().
+    Typical daily run: fetches 1 new day instead of 28.
+    """
+    today    = today or date.today()
+    end_date = today - timedelta(days=10)   # BARB lag
+    cutoff   = today - timedelta(days=days)
+
+    all_dates = {r.tx_date for recs in existing.values() for r in recs}
+
+    if not all_dates:
+        print("  [ingest] No cache — full ingest")
+        return ingest_trailing_window(days=days, today=today)
+
+    last_cached = max(all_dates)
+    fetch_start = last_cached + timedelta(days=1)
+
+    if fetch_start > end_date:
+        print(f"  [ingest] Cache up to date (latest: {last_cached})")
+    else:
+        print(f"  [ingest] Incremental: {fetch_start} → {end_date} ({(end_date - last_cached).days} day(s))")
+        new_data = _fetch_date_range(fetch_start, end_date, anchor_date=today)
+        for sid, recs in new_data.items():
+            existing.setdefault(sid, []).extend(recs)
+
+    # Prune old episodes and drop empty series
+    for sid in list(existing.keys()):
+        existing[sid] = sorted(
+            (r for r in existing[sid] if r.tx_date >= cutoff),
+            key=lambda r: r.tx_date,
+        )
+        if not existing[sid]:
+            del existing[sid]
+
+    total = sum(len(v) for v in existing.values())
+    print(f"  [ingest] Universe: {len(existing)} series, {total} episodes")
+    return existing

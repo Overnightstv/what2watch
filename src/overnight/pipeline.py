@@ -17,7 +17,7 @@ from pathlib import Path
 
 import yaml
 
-from overnight.ingest import ingest_trailing_window
+from overnight.ingest import ingest_trailing_window, ingest_incremental
 from overnight.metrics.scores import compute_series_metrics
 from overnight.pa_schedule import build_schedule, CATCHUP
 from overnight.models import EpisodeRecord, ScheduleItem
@@ -71,23 +71,26 @@ def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool 
 
     print(f"\n── What 2 Watch pipeline  {today.isoformat()} ─────────────────\n")
 
-    # 1. BARB ingest — trailing 28 days (or load from cache)
+    # 1. BARB ingest — incremental: load cache, fetch only new days, save back
     print("Step 1: Ingesting BARB data…")
-    if cache and CACHE_PATH.exists():
-        print(f"  Loading from cache: {CACHE_PATH}")
+    existing: dict = {}
+    if CACHE_PATH.exists():
+        print(f"  Loading cache: {CACHE_PATH}")
         with open(CACHE_PATH, "rb") as f:
-            universe = pickle.load(f)
-        print(f"  {len(universe)} series loaded from cache")
-    else:
-        universe = ingest_trailing_window(days=28, today=today)
-        if not universe:
-            print("  No episode data returned — aborting.")
-            sys.exit(1)
-        if cache:
-            CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with open(CACHE_PATH, "wb") as f:
-                pickle.dump(universe, f)
-            print(f"  Cache saved → {CACHE_PATH}")
+            existing = pickle.load(f)
+        print(f"  {len(existing)} series in cache")
+
+    universe = ingest_incremental(existing, days=28, today=today)
+
+    if not universe:
+        print("  No episode data returned — aborting.")
+        sys.exit(1)
+
+    if not dry_run:
+        CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(CACHE_PATH, "wb") as f:
+            pickle.dump(universe, f)
+        print(f"  Cache saved → {CACHE_PATH}")
 
     # 2. Series metrics
     print("\nStep 2: Computing series metrics…")

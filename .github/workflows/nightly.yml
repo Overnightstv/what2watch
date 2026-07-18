@@ -24,6 +24,14 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Restore universe cache
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: data/universe_cache.pkl
+          key: universe-cache-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: universe-cache-${{ runner.os }}-
+
       - name: Run nightly pipeline
         env:
           OVERNIGHTS_API_TOKEN: ${{ secrets.OVERNIGHTS_API_TOKEN }}
@@ -40,3 +48,10 @@ jobs:
         run: |
           cd src
           python -m overnight.pipeline
+
+      - name: Save universe cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: data/universe_cache.pkl
+          key: universe-cache-${{ runner.os }}-${{ github.run_id }}
