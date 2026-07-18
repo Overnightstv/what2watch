@@ -273,7 +273,7 @@ def _fetch_date_range(
 
                 aud, share = fetch_live_vosdal(station_code, start_secs, end_secs, current)
                 if aud is None:
-                    time.sleep(0.3)
+                    time.sleep(0.1)
                     continue
 
                 slot_avg = fetch_slot_average(
@@ -293,7 +293,7 @@ def _fetch_date_range(
                     slot_avg_share_8wk = slot_avg,
                 )
                 universe.setdefault(sid, []).append(rec)
-                time.sleep(0.15)
+                time.sleep(0.05)
 
             current += timedelta(days=1)
 
