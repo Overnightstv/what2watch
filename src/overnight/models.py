@@ -22,6 +22,18 @@ class AlertType(str, Enum):
 
 
 @dataclass
+class VodRecord:
+    """One day's streaming snapshot for a title. RAW - never leaves the metrics layer."""
+    series_id: str
+    title: str
+    platform: str           # "Netflix", "Prime Video", "Disney+", etc.
+    date_of_activity: date
+    views: int              # 7-day rolling BARB viewers
+    minutes_watched: int    # 7-day rolling minutes
+    genre: str
+
+
+@dataclass
 class EpisodeRecord:
     """One episode's measured performance. RAW - never leaves the metrics layer."""
     programme_id: str

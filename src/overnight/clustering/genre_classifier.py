@@ -107,6 +107,51 @@ _BROAD_CHANNELS: dict[str, list[str]] = {
 }
 
 
+# Streaming platform → primary cluster mapping
+_PLATFORM_CLUSTERS: dict[str, list[str]] = {
+    "Netflix":      ["drama", "entertainment"],
+    "Prime Video":  ["drama", "entertainment"],
+    "Disney+":      ["entertainment", "drama", "kids"],
+    "Apple TV+":    ["drama"],
+    "NOW":          ["drama", "entertainment"],
+    "Paramount+":   ["drama", "entertainment"],
+    "ITVX":         ["drama", "entertainment", "factual"],
+    "iPlayer":      ["drama", "factual", "entertainment"],
+    "All 4":        ["factual", "entertainment", "drama"],
+    "My5":          ["entertainment"],
+    "BritBox":      ["drama"],
+    "Mubi":         ["arts", "drama"],
+    "Shudder":      ["drama"],
+}
+
+# Genre keyword → cluster refinement for VOD titles
+_VOD_GENRE_SIGNALS: list[tuple[re.Pattern, list[str]]] = [
+    (re.compile(r'\b(documentary|factual|nature|history|science|true crime)\b', re.I), ["factual"]),
+    (re.compile(r'\b(comedy|stand.?up|sitcom)\b', re.I), ["comedy"]),
+    (re.compile(r'\b(animation|cartoon|family|children|kids)\b', re.I), ["kids"]),
+    (re.compile(r'\b(sport|football|cricket|tennis|golf|racing|f1)\b', re.I), ["sport"]),
+    (re.compile(r'\b(arts|culture|music|ballet|opera|theatre)\b', re.I), ["arts"]),
+]
+
+
+def classify_vod_series(series_id: str, title: str, platform: str, genre: str) -> list[str]:
+    """Return cluster IDs for a VOD title using platform and genre signals."""
+    clusters: set[str] = set()
+
+    if platform in _PLATFORM_CLUSTERS:
+        clusters.update(_PLATFORM_CLUSTERS[platform])
+
+    # Refine by genre string from the API
+    for pattern, tags in _VOD_GENRE_SIGNALS:
+        if pattern.search(genre) or pattern.search(title):
+            clusters.update(tags)
+
+    if not clusters:
+        clusters.add("entertainment")
+
+    return sorted(clusters)
+
+
 def classify_series(series_id: str, title: str, channel: str) -> list[str]:
     """Return the list of cluster IDs this series belongs to.
 
@@ -137,11 +182,20 @@ def classify_series(series_id: str, title: str, channel: str) -> list[str]:
 
 def build_cluster_index(
     universe: dict[str, list],
+    vod_universe: dict[str, list] | None = None,
 ) -> dict[str, list[str]]:
-    """Return {cluster_id: [series_id, ...]} for the whole universe."""
+    """Return {cluster_id: [series_id, ...]} for linear + VOD universes."""
     index: dict[str, list[str]] = {}
+
     for sid, eps in universe.items():
         latest = eps[-1]
         for cluster in classify_series(sid, latest.title, latest.channel):
             index.setdefault(cluster, []).append(sid)
+
+    if vod_universe:
+        for sid, recs in vod_universe.items():
+            latest = recs[-1]
+            for cluster in classify_vod_series(sid, latest.title, latest.platform, latest.genre):
+                index.setdefault(cluster, []).append(sid)
+
     return index

@@ -53,7 +53,17 @@ OUTPUT: JSON only, no markdown fences, matching:
 Weekly gem items additionally get "gem_line": one sentence of the form
 'People with your taste are unusually loyal to this - and almost
 nobody has found it yet', adapted to the evidence. Never claim precision
-the payload does not contain."""
+the payload does not contain.
+
+STREAMING ITEMS: Some items come from streaming platforms (Netflix, Prime Video,
+Disney+, Apple TV+, etc.) rather than scheduled TV. For these:
+- The 'channel' field contains the platform name (e.g. "Netflix")
+- 'tx' is null — never mention a broadcast time or "tonight"
+- Frame as "Streaming now on [platform]" or "Available on [platform]"
+- For Verdict chip: lean into binge framing — "once you start, you won't stop"
+- For Gem chip: discovery angle — "flying under the radar on [platform]"
+- Use the evidence 'days_in_charts' and 'binge_band' to support the claim
+- Never describe a streaming show as "on TV tonight" — it's on demand"""
 
 
 def build_payload(edition: Edition) -> str:

@@ -18,7 +18,9 @@ from pathlib import Path
 import yaml
 
 from overnight.ingest import ingest_trailing_window, ingest_incremental
+from overnight.ingest_vod import ingest_vod_incremental
 from overnight.metrics.scores import compute_series_metrics
+from overnight.metrics.vod_scores import compute_all_vod_metrics
 from overnight.pa_schedule import build_schedule, CATCHUP
 from overnight.models import EpisodeRecord, ScheduleItem
 from overnight.selection.engine import SelectionEngine
@@ -62,7 +64,8 @@ def _synthetic_schedule(
     return items
 
 
-CACHE_PATH = Path(__file__).parents[2] / "data" / "universe_cache.pkl"
+CACHE_PATH     = Path(__file__).parents[2] / "data" / "universe_cache.pkl"
+VOD_CACHE_PATH = Path(__file__).parents[2] / "data" / "vod_cache.pkl"
 
 
 def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool = False, cache: bool = False) -> None:
@@ -92,13 +95,32 @@ def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool 
             pickle.dump(universe, f)
         print(f"  Cache saved → {CACHE_PATH}")
 
-    # 2. Series metrics
+    # 1b. VOD ingest — incremental, separate 14-day cache
+    print("\nStep 1b: Ingesting VOD streaming data…")
+    vod_existing: dict = {}
+    if VOD_CACHE_PATH.exists():
+        with open(VOD_CACHE_PATH, "rb") as f:
+            vod_existing = pickle.load(f)
+        print(f"  {len(vod_existing)} streaming titles in cache")
+
+    vod_universe = ingest_vod_incremental(vod_existing, days=14, today=today)
+
+    if not dry_run:
+        VOD_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(VOD_CACHE_PATH, "wb") as f:
+            pickle.dump(vod_universe, f)
+        print(f"  VOD cache saved → {VOD_CACHE_PATH}")
+
+    # 2. Series metrics (linear + VOD)
     print("\nStep 2: Computing series metrics…")
     metrics = {
         sid: compute_series_metrics(eps, universe, CFG, computed_at=today)
         for sid, eps in universe.items()
     }
-    print(f"  {len(metrics)} series scored")
+    print(f"  {len(metrics)} linear series scored")
+
+    vod_metrics = compute_all_vod_metrics(vod_universe, computed_at=today)
+    print(f"  {len(vod_metrics)} streaming titles scored")
 
     # 3. Forward schedule — PA API or synthetic fallback
     if no_pa:
@@ -112,18 +134,21 @@ def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool 
             print("  No schedule items — aborting.")
             sys.exit(1)
 
-    # 4. Build cluster index — which series belong to which interest cluster
+    # 4. Build cluster index — linear + VOD
     print("\nStep 4: Building cluster index…")
-    cluster_index = build_cluster_index(universe)
+    cluster_index = build_cluster_index(universe, vod_universe=vod_universe)
     clusters = CFG.get("clusters", {})
     print(f"  {len(clusters)} clusters: {', '.join(clusters)}")
     for cid, sids in cluster_index.items():
         print(f"    {cid}: {len(sids)} series")
 
-    # 5. Selection — one edition per cluster
+    # 5. Selection — one edition per cluster (linear + VOD candidates)
     print("\nStep 5: Running selection engine per cluster…")
     engine = SelectionEngine(CFG, history=[])
-    all_candidates = engine.build_candidates(schedule, metrics, now)
+    linear_candidates = engine.build_candidates(schedule, metrics, now)
+    vod_candidates    = engine.build_vod_candidates(vod_metrics, today)
+    all_candidates    = linear_candidates + vod_candidates
+    print(f"  {len(linear_candidates)} linear + {len(vod_candidates)} streaming candidates")
 
     editions = {}
     for cluster_id in clusters:

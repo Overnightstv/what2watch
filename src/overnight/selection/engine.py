@@ -118,6 +118,49 @@ class SelectionEngine:
                     evidence=self._evidence(m), score=m.loyalty))
         return out
 
+    def build_vod_candidates(
+        self,
+        vod_metrics: dict,  # str → VodMetrics
+        today: date,
+    ) -> list[AlertItem]:
+        """Build BINGE_VERDICT and WEEKLY_GEM candidates from streaming data."""
+        from overnight.metrics.vod_scores import vod_median_views
+
+        out: list[AlertItem] = []
+        median_views = vod_median_views(vod_metrics)
+
+        for sid, vm in vod_metrics.items():
+            if self._mentions_last_7d(sid) >= self.s["max_mentions_per_7_days"]:
+                continue
+
+            evidence = {
+                "trend_band":   _vod_band(vm.trend),
+                "binge_band":   _vod_band(vm.binge_score),
+                "days_in_charts": vm.consistency,
+                "platform":     vm.platform,
+            }
+            common = dict(
+                series_id=sid, title=vm.title, channel=vm.platform,
+                tx=None, availability=[vm.platform], image_ref=None,
+                evidence=evidence,
+            )
+
+            # Binge verdict: sustained presence + strong session signal
+            binge_g = self.g.get("binge_verdict", {})
+            min_cons = binge_g.get("min_consistency_days", 3)
+            min_binge = binge_g.get("min_vod_binge_score", 55)
+            if vm.consistency >= min_cons and vm.binge_score >= min_binge:
+                out.append(AlertItem(alert_type=AlertType.BINGE_VERDICT,
+                                     score=vm.binge_score, **common))
+
+            # Weekly gem: below-median reach but highly engaging
+            elif vm.binge_score >= binge_g.get("min_vod_gem_binge_score", 45):
+                if vm.latest_views < median_views * 0.6:
+                    out.append(AlertItem(alert_type=AlertType.WEEKLY_GEM,
+                                         score=vm.binge_score * 0.8, **common))
+
+        return out
+
     # ---------- slot allocation ----------
 
     def allocate(self, candidates: list[AlertItem], edition_date: date,
@@ -154,3 +197,13 @@ class SelectionEngine:
         recent = [a for a in self.history
                   if a.series_id == cand.series_id and a.alert_type == AlertType.BANKER]
         return len(recent) < self.s["banker_consecutive_cap"]
+
+
+def _vod_band(score: float) -> str:
+    if score >= 80:
+        return "very high"
+    if score >= 60:
+        return "high"
+    if score >= 40:
+        return "mid"
+    return "low"

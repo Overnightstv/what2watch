@@ -31,6 +31,10 @@ gates:
     min_loyalty: 75
     min_episodes: 3
     completed_within_days: 7
+    # VOD streaming gates (separate from linear binge eligibility)
+    min_consistency_days: 3       # days in streaming charts
+    min_vod_binge_score: 55       # avg session signal (0-100)
+    min_vod_gem_binge_score: 45   # lower threshold for gem (reach must be low)
   live_event:
     min_comparable_percentile: 60
     national_moment_percentile: 90   # overrides sport-averse segment suppression

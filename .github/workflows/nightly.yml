@@ -32,6 +32,14 @@ jobs:
           key: universe-cache-${{ runner.os }}-${{ github.run_id }}
           restore-keys: universe-cache-${{ runner.os }}-
 
+      - name: Restore VOD cache
+        id: vod-cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: data/vod_cache.pkl
+          key: vod-cache-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: vod-cache-${{ runner.os }}-
+
       - name: Run nightly pipeline
         env:
           OVERNIGHTS_API_TOKEN: ${{ secrets.OVERNIGHTS_API_TOKEN }}
@@ -45,6 +53,8 @@ jobs:
           SEND_TO_EMAIL: ${{ secrets.SEND_TO_EMAIL }}
           SUBSCRIBERS_API_URL: ${{ secrets.SUBSCRIBERS_API_URL }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+          VOD_BASE_URL: https://system-next.on-tv.tech
+          VOD_TOKEN: ${{ secrets.OVERNIGHTS_PROGRAMME_TOKEN }}
         run: |
           cd src
           python -m overnight.pipeline
@@ -55,3 +65,10 @@ jobs:
         with:
           path: data/universe_cache.pkl
           key: universe-cache-${{ runner.os }}-${{ github.run_id }}
+
+      - name: Save VOD cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: data/vod_cache.pkl
+          key: vod-cache-${{ runner.os }}-${{ github.run_id }}
