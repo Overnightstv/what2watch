@@ -103,7 +103,7 @@ def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool 
             vod_existing = pickle.load(f)
         print(f"  {len(vod_existing)} streaming titles in cache")
 
-    vod_universe = ingest_vod_incremental(vod_existing, days=14, today=today)
+    vod_universe = ingest_vod_incremental(vod_existing, universe=universe, days=14, today=today)
 
     if not dry_run:
         VOD_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
