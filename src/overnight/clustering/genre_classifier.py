@@ -77,7 +77,7 @@ _CHANNEL_CLUSTERS: dict[str, list[str]] = {
 # Title keyword → additional clusters (applied on top of channel signal)
 _TITLE_SIGNALS: list[tuple[re.Pattern, list[str]]] = [
     (re.compile(r'\b(murder|detective|crime|killer|arrest|police|thriller|heist)\b', re.I), ["drama"]),
-    (re.compile(r'\b(documentary|history|science|nature|planet|wildlife|war|secrets?)\b', re.I), ["factual"]),
+    (re.compile(r'\b(documentary|history|science|nature|planet|wildlife|war|secrets?|tours?|safari|expedition|explore|exploring|journeys?|countryside|landscape|rural|antiques?|archaeology|digging|gardening|gardeners?|railways?|heritage)\b', re.I), ["factual"]),
     (re.compile(r'\b(comedy|sitcom|stand.?up|funny)\b', re.I), ["comedy"]),
     (re.compile(r'\b(love island|strictly|bake off|apprentice|idol|got talent|big brother|celebrity)\b', re.I), ["entertainment"]),
     (re.compile(r'\b(f1|formula|football|premier league|champions league|cricket|wimbledon|rugby|golf|ufc|nba|nfl)\b', re.I), ["sport"]),
