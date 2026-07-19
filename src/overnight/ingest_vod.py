@@ -1,22 +1,25 @@
-"""VOD ingest — fetches BARB streaming data via api.on-tv.tech content endpoints.
+"""VOD ingest — autonomous discovery from BARB daily streaming chart.
 
-Discovery strategy:
-  1. Top linear shows (from the BARB universe) that air on channels with catch-up
-     services — BBC→iPlayer, ITV→ITVX, C4→All 4, C5→My5
-  2. Curated streaming-native seeds (Netflix/Prime Video/Disney+ originals)
+Primary source: GET /api/vod-report/{date}?token=...
+Returns the complete BARB UK streaming dataset (~1000 items/day) covering every
+show BARB recorded on any streaming platform that day — Netflix, Prime Video,
+Disney+, BBC iPlayer, ITVX, All 4, My5, and more.
 
-For each candidate:
-  GET /content/search?keyword={title}   — find the show's BARB content IDs
-  POST /content/viewers                  — 7-day viewer total per episode
+No seed lists needed: Clarkson's Farm, Netflix originals, and every other
+streaming-native title appear autonomously if UK audiences watched them.
 
-The viewer total for a 7-day window gives a "currently being watched" signal.
-Stored as one VodRecord per day so consecutive days can be compared for trend.
+Ingest strategy:
+  - Fetch VOD report for each day in the trailing window (skips days already cached)
+  - Parse "Show Title: Series N, Episode N" → series name + aggregate episodes
+  - Store one VodRecord per (series, date) with daily viewer totals
+  - Prune records older than the retention window
 """
 from __future__ import annotations
 
 import os
 import re
 import time
+from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -28,60 +31,23 @@ from overnight.models import EpisodeRecord, VodRecord
 load_dotenv(Path(__file__).parents[2] / ".env")
 
 BASE_URL = os.getenv("OVERNIGHTS_BASE_URL", "https://api.on-tv.tech/api")
-_TOKEN   = os.getenv("OVERNIGHTS_PROGRAMME_TOKEN", os.getenv("OVERNIGHTS_API_TOKEN", ""))
-if not _TOKEN.startswith("Bearer "):
-    _TOKEN = f"Bearer {_TOKEN}"
-_HEADERS = {"Authorization": _TOKEN, "Accept": "application/json"}
+# VOD report uses token as query param, not Bearer header
+_JWT = os.getenv("OVERNIGHTS_PROGRAMME_TOKEN", os.getenv("OVERNIGHTS_API_TOKEN", ""))
+_JWT = _JWT.replace("Bearer ", "").strip()
 
-# Channels whose shows are available on catch-up BVOD
-_CATCH_UP_CHANNELS: dict[str, str] = {
-    "BBC One":     "BBC iPlayer",
-    "BBC Two":     "BBC iPlayer",
-    "BBC Three":   "BBC iPlayer",
-    "BBC Four":    "BBC iPlayer",
-    "ITV":         "ITVX",
-    "ITV2":        "ITVX",
-    "ITV3":        "ITVX",
-    "ITV4":        "ITVX",
-    "Channel 4":   "All 4",
-    "E4":          "All 4",
-    "More4":       "All 4",
-    "Film4":       "All 4",
-    "Channel 5":   "My5",
-    "5STAR":       "My5",
+# Platform display-name normalisation (VOD report names → user-facing names)
+_PLATFORM_DISPLAY: dict[str, str] = {
+    "4+": "All 4",
+    "5": "My5",
+    "Now": "Now",
+    "U": "UKTV Play",
 }
 
-# Streaming-native seeds — popular shows on Netflix/Prime/Disney+ not in the
-# linear universe. Update this list as new shows launch.
-STREAMING_SEEDS: list[tuple[str, str]] = [
-    # (title, platform hint for display only)
-    ("Stranger Things",    "Netflix"),
-    ("Bridgerton",         "Netflix"),
-    ("The Crown",          "Netflix"),
-    ("Black Mirror",       "Netflix"),
-    ("Wednesday",          "Netflix"),
-    ("Squid Game",         "Netflix"),
-    ("The Diplomat",       "Netflix"),
-    ("Adolescence",        "Netflix"),
-    ("The Boys",           "Prime Video"),
-    ("Rings of Power",     "Prime Video"),
-    ("Citadel",            "Prime Video"),
-    ("Fallout",            "Prime Video"),
-    ("The Bear",           "Disney+"),
-    ("Only Murders",       "Disney+"),
-    ("Abbott Elementary",  "Disney+"),
-    ("Andor",              "Disney+"),
-    ("Loki",               "Disney+"),
-    ("Slow Horses",        "Apple TV+"),
-    ("Severance",          "Apple TV+"),
-    ("Presumed Innocent",  "Apple TV+"),
-]
+# Minimum viewer count to include a series (filters out noise at the bottom of the chart)
+_MIN_VIEWERS = 5_000
 
-# Window for "currently being watched" viewer count
-_VOD_WINDOW_DAYS = 7
-
-# Max linear shows to query (keeps runtime reasonable — pick by episode count)
-_MAX_LINEAR_SHOWS = 40
+# How many days to retain VOD records
+_VOD_WINDOW_DAYS = 14
 
 
 def _series_slug(title: str, provider: str) -> str:
@@ -90,164 +56,137 @@ def _series_slug(title: str, provider: str) -> str:
     return f"vod-{plat}-{slug}"
 
 
-def _search_content(title: str, retries: int = 2) -> list[dict]:
-    """GET /content/search?keyword={title} — returns list of show objects."""
+def _parse_series_name(programme_name: str) -> str:
+    """Extract series title from BARB programme name format.
+
+    Handles patterns like:
+      "Clarkson's Farm: Series 5, Episode 8"    → "Clarkson's Farm"
+      "Ride or Die, Series 1, Episode 1"        → "Ride or Die"
+      "CORONATION STREET, Series 67, Episode 140" → "Coronation Street"
+      "FIFA World Cup 2026: Series 13"           → "FIFA World Cup 2026"
+      "FILM: Project Hail Mary (2026)"           → "Project Hail Mary (2026)"
+    """
+    # Strip leading "FILM: " prefix
+    name = re.sub(r"^FILM:\s+", "", programme_name, flags=re.IGNORECASE)
+    # Strip "[,: ] Series N, Episode N" — supports both colon and comma separators
+    name = re.sub(r"\s*[,:]\s+Series\s+\S+,?\s+Episode\s+\d+$", "", name, flags=re.IGNORECASE).strip()
+    # Strip remaining "[,: ] Series N" suffix (no episode component)
+    name = re.sub(r"\s*[,:]\s+Series\s+\S+$", "", name, flags=re.IGNORECASE).strip()
+    # Normalise all-caps names (e.g. "CORONATION STREET" → "Coronation Street")
+    if name and name.upper() == name:
+        name = name.title()
+    return name
+
+
+def fetch_vod_report_raw(activity_date: date, retries: int = 2) -> list[dict]:
+    """GET /api/vod-report/{date}?token=... — full BARB streaming dataset."""
+    url = f"{BASE_URL}/vod-report/{activity_date.isoformat()}?token={_JWT}"
     for attempt in range(retries + 1):
         try:
-            resp = requests.get(
-                f"{BASE_URL}/content/search",
-                params={"keyword": title},
-                headers=_HEADERS,
-                timeout=90,
-            )
+            resp = requests.get(url, timeout=60)
             resp.raise_for_status()
-            return resp.json().get("data", [])
+            data = resp.json().get("data") or {}
+            content = data.get("content") or {}
+            return content.get("vodResults", [])
         except Exception as exc:
             if attempt < retries:
                 time.sleep(2)
             else:
-                print(f"    [vod] search '{title}': {exc}")
+                raise exc
     return []
-
-
-def _fetch_viewers(episode: dict, window_days: int) -> tuple[float, float, str]:
-    """POST /content/viewers — returns (viewers, minutesWatched, providerName)."""
-    today = date.today()
-    payload = {
-        "startDate": (today - timedelta(days=window_days)).isoformat(),
-        "endDate":   today.isoformat(),
-        "episode":   episode,
-    }
-    try:
-        resp = requests.post(
-            f"{BASE_URL}/content/viewers",
-            json=payload,
-            headers=_HEADERS,
-            timeout=90,
-        )
-        resp.raise_for_status()
-        d = resp.json().get("data", {})
-        total     = d.get("total", {})
-        providers = d.get("byProvider", [])
-        provider  = providers[0].get("providerName", "") if providers else ""
-        return float(total.get("viewers", 0)), float(total.get("viewerMinutes", 0)), provider
-    except Exception as exc:
-        print(f"    [vod] viewers: {exc}")
-        return 0.0, 0.0, ""
-
-
-def _best_episode(show: dict) -> dict | None:
-    """Return the episode with the highest episodeId from the most recent series."""
-    series_list = show.get("series", [])
-    if not series_list:
-        return None
-    latest_series = max(series_list, key=lambda s: s.get("seasonId", 0))
-    eps = latest_series.get("episodes", [])
-    if not eps:
-        return None
-    return max(eps, key=lambda e: e.get("episodeId", 0))
-
-
-def fetch_vod_for_title(
-    title: str,
-    activity_date: date,
-    expected_provider: str = "",
-) -> VodRecord | None:
-    """Search for one title and return a VodRecord if viewers > 0."""
-    results = _search_content(title)
-    time.sleep(0.3)
-
-    for result in results:
-        ep = _best_episode(result)
-        if not ep:
-            continue
-        viewers, minutes, provider = _fetch_viewers(ep, _VOD_WINDOW_DAYS)
-        time.sleep(0.2)
-        if viewers <= 0:
-            continue
-
-        # If we have an expected provider hint and the provider doesn't match, skip
-        if expected_provider and provider and expected_provider.lower() not in provider.lower():
-            continue
-
-        show_title = (result.get("metaBroadcastContentName") or title).strip()
-        genre      = ""  # genre not returned by this endpoint
-        sid        = _series_slug(show_title, provider or expected_provider)
-
-        return VodRecord(
-            series_id        = sid,
-            title            = show_title,
-            platform         = provider or expected_provider,
-            date_of_activity = activity_date,
-            views            = int(viewers),
-            minutes_watched  = int(minutes),
-            genre            = genre,
-        )
-    return None
 
 
 def ingest_vod_incremental(
     existing: dict[str, list[VodRecord]],
     universe: dict[str, list[EpisodeRecord]] | None = None,
-    days: int = 14,
+    days: int = _VOD_WINDOW_DAYS,
     today: date | None = None,
 ) -> dict[str, list[VodRecord]]:
-    """Build / refresh the VOD universe.
+    """Build / refresh the VOD universe from BARB daily streaming reports.
 
-    Skips series that already have a snapshot for today (idempotent).
-    `universe` is the linear BARB universe — used to pick catch-up candidates.
+    Fetches the BARB VOD chart for each day in the trailing window.
+    Skips dates already present in the cache (idempotent).
+    The `universe` parameter is accepted for pipeline compatibility but is no
+    longer used — all streaming shows are discovered autonomously from the chart.
     """
-    today  = today or date.today()
+    today = today or date.today()
     cutoff = today - timedelta(days=days)
 
-    already_today = {
-        sid for sid, recs in existing.items()
-        if any(r.date_of_activity == today for r in recs)
-    }
+    # Find which dates we already have in the cache
+    dates_cached: set[date] = set()
+    for recs in existing.values():
+        for r in recs:
+            dates_cached.add(r.date_of_activity)
 
-    candidates: list[tuple[str, str]] = []  # (title, platform_hint)
+    # Dates to fetch (most recent first)
+    dates_to_fetch = [
+        today - timedelta(days=i)
+        for i in range(days)
+        if (today - timedelta(days=i)) not in dates_cached
+        and (today - timedelta(days=i)) >= cutoff
+    ]
 
-    # 1. Linear shows on catch-up channels (sorted by episode count as proxy for relevance)
-    if universe:
-        linear_picks: list[tuple[str, str, int]] = []
-        for sid, eps in universe.items():
-            latest  = eps[-1]
-            channel = latest.channel
-            if channel not in _CATCH_UP_CHANNELS:
-                continue
-            platform = _CATCH_UP_CHANNELS[channel]
-            linear_picks.append((latest.title, platform, len(eps)))
-        linear_picks.sort(key=lambda x: x[2], reverse=True)
-        candidates.extend((t, p) for t, p, _ in linear_picks[:_MAX_LINEAR_SHOWS])
+    if not dates_to_fetch:
+        print("  [vod] Cache is current — nothing to fetch")
+    else:
+        print(f"  [vod] Fetching VOD reports for {len(dates_to_fetch)} date(s)")
 
-    # 2. Streaming-native seeds (Netflix / Prime / Disney+)
-    candidates.extend(STREAMING_SEEDS)
-
-    # Deduplicate by title (case-insensitive)
-    seen_titles: set[str] = set()
-    deduped: list[tuple[str, str]] = []
-    for title, platform in candidates:
-        key = title.lower()
-        if key not in seen_titles:
-            seen_titles.add(key)
-            deduped.append((title, platform))
-
-    print(f"  [vod] Checking {len(deduped)} titles ({len([c for c in deduped if c[1] in ('Netflix','Prime Video','Disney+','Apple TV+')])} streaming-native)")
-
-    new_count = 0
-    for title, platform in deduped:
-        # Quick skip: if a record with this title already exists for today, skip
-        slug = _series_slug(title, platform)
-        if slug in already_today:
+    new_series_count = 0
+    for activity_date in dates_to_fetch:
+        try:
+            raw = fetch_vod_report_raw(activity_date)
+        except Exception as exc:
+            print(f"    [vod] {activity_date}: fetch failed — {exc}")
             continue
 
-        rec = fetch_vod_for_title(title, today, expected_provider=platform)
-        if rec:
-            existing.setdefault(rec.series_id, []).append(rec)
-            new_count += 1
-            print(f"    [vod] {rec.title} ({rec.platform}): {rec.views:,} viewers")
+        if not raw:
+            print(f"    [vod] {activity_date}: no data returned")
+            continue
 
-    # Prune old records and drop empty series
+        # Aggregate episodes → series for this date
+        agg: dict[tuple[str, str], dict] = defaultdict(
+            lambda: {"viewers": 0, "minutes": 0, "genre": ""}
+        )
+        for item in raw:
+            programme_name = item.get("programmeName") or ""
+            platform_raw = item.get("station", {}).get("name", "")
+            platform = _PLATFORM_DISPLAY.get(platform_raw, platform_raw)
+            viewers = int(item.get("viewers") or 0)
+            minutes = int(item.get("viewerMinutes") or 0)
+            genre = item.get("genre", "")
+
+            if not programme_name or not platform or viewers <= 0:
+                continue
+
+            series_name = _parse_series_name(programme_name)
+            key = (series_name, platform)
+            agg[key]["viewers"] += viewers
+            agg[key]["minutes"] += minutes
+            if not agg[key]["genre"]:
+                agg[key]["genre"] = genre
+
+        date_count = 0
+        for (series_name, platform), totals in agg.items():
+            if totals["viewers"] < _MIN_VIEWERS:
+                continue
+            sid = _series_slug(series_name, platform)
+            rec = VodRecord(
+                series_id=sid,
+                title=series_name,
+                platform=platform,
+                date_of_activity=activity_date,
+                views=totals["viewers"],
+                minutes_watched=totals["minutes"],
+                genre=totals["genre"],
+            )
+            existing.setdefault(sid, []).append(rec)
+            date_count += 1
+
+        new_series_count += date_count
+        print(f"    [vod] {activity_date}: {len(raw)} raw items → {date_count} series records")
+        time.sleep(0.5)  # polite rate-limiting
+
+    # Prune records outside the retention window and drop empty series
     for sid in list(existing.keys()):
         existing[sid] = sorted(
             (r for r in existing[sid] if r.date_of_activity >= cutoff),
@@ -256,6 +195,9 @@ def ingest_vod_incremental(
         if not existing[sid]:
             del existing[sid]
 
-    total = sum(len(v) for v in existing.values())
-    print(f"  [vod] Universe: {len(existing)} streaming titles ({new_count} new today), {total} snapshots")
+    total_recs = sum(len(v) for v in existing.values())
+    print(
+        f"  [vod] Universe: {len(existing)} streaming series, "
+        f"{total_recs} daily snapshots"
+    )
     return existing

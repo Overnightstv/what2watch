@@ -53,8 +53,6 @@ jobs:
           SEND_TO_EMAIL: ${{ secrets.SEND_TO_EMAIL }}
           SUBSCRIBERS_API_URL: ${{ secrets.SUBSCRIBERS_API_URL }}
           ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
-          VOD_BASE_URL: https://system-next.on-tv.tech
-          VOD_TOKEN: ${{ secrets.OVERNIGHTS_PROGRAMME_TOKEN }}
         run: |
           cd src
           python -m overnight.pipeline
