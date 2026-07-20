@@ -256,6 +256,8 @@ def _fetch_date_range(
 
             for show in shows:
                 title      = (show.get("txLogProgrammeName") or "").strip()
+                if title and title.upper() == title:
+                    title = title.title()
                 start_secs = show.get("programmeStartTime")
                 end_secs   = show.get("programmeEndTime")
 

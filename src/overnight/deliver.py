@@ -6,7 +6,6 @@ No figures ever appear in outbound email — the lint gate ensures this.
 """
 from __future__ import annotations
 
-import imaplib
 import os
 import smtplib
 from datetime import date, datetime
@@ -97,23 +96,27 @@ def render_html(edition: Edition, copy: dict, tx_date: date) -> str:
     )
 
 
-def _render_items(edition: Edition, copy: dict) -> list[dict]:
+def _render_items(edition: Edition, copy: dict, cluster_label: str = "") -> list[dict]:
     """Return a list of rendered item dicts from one cluster edition."""
     alert_map = {a.series_id: a for a in edition.items}
+    print(f"  [render] alert_map keys: {list(alert_map.keys())}", flush=True)
     out = []
     for ci in copy.get("items", []):
         sid   = ci.get("series_id", "")
         alert = alert_map.get(sid)
+        title = alert.title if alert else sid
+        print(f"  [render] sid={repr(sid)} alert={'found' if alert else 'MISS'} title={repr(title)}", flush=True)
         out.append({
-            "headline":     ci.get("headline", ""),
-            "body":         ci.get("body", ""),
-            "gem_line":     ci.get("gem_line", ""),
-            "chip":         _chip_label(ci.get("chip", "")),
-            "title":        alert.title if alert else sid,
-            "channel":      alert.channel if alert else "",
-            "tx_time":      _tx_time(alert) if alert else "",
-            "availability": _availability(alert) if alert else "",
-            "image_url":    (alert.image_ref or "") if alert else "",
+            "headline":      ci.get("headline", ""),
+            "body":          ci.get("body", ""),
+            "gem_line":      ci.get("gem_line", ""),
+            "chip":          _chip_label(ci.get("chip", "")),
+            "title":         title,
+            "channel":       alert.channel if alert else "",
+            "tx_time":       _tx_time(alert) if alert else "",
+            "availability":  _availability(alert) if alert else "",
+            "image_url":     (alert.image_ref or "") if alert else "",
+            "cluster_label": cluster_label,
         })
     return out
 
@@ -135,71 +138,118 @@ def _fetch_subscribers() -> list[dict]:
     return []
 
 
-def draft_subscriber_editions(editions_with_copy: dict, tx_date: date) -> None:
-    """Save one IMAP draft per subscriber, combining picks from their clusters."""
-    if not SMTP_PASSWORD:
-        print("  [deliver] SMTP_APP_PASSWORD not set — skipping subscriber drafts")
-        return
-
-    subscribers = _fetch_subscribers()
-    if not subscribers:
-        print("  [deliver] No subscribers found — skipping drafts")
-        return
-
+def _build_subscriber_html(
+    editions_with_copy: dict,
+    clusters_cfg: dict,
+    email: str,
+    cluster_ids: list[str],
+    tx_date: date,
+) -> tuple[str, str] | None:
+    """Build HTML + subject for one subscriber. Returns None if no picks tonight."""
     env      = _jinja_env()
     tmpl     = env.get_template("email_daily.html")
     date_str = tx_date.strftime("%-d %B %Y")
 
-    conn = imaplib.IMAP4_SSL("imap.gmail.com")
-    conn.login(SMTP_USER, SMTP_PASSWORD)
+    sections: list[dict] = []
+    subject_line: str | None = None
+
+    for cluster_id in cluster_ids:
+        pair = editions_with_copy.get(cluster_id)
+        if not pair:
+            continue
+        edition, copy = pair
+        if not edition.items:
+            continue
+        label = clusters_cfg.get(cluster_id, {}).get("label", cluster_id.title())
+        items = _render_items(edition, copy, cluster_label=label)
+        if items:
+            sections.append({"label": label, "picks": items})
+        if subject_line is None:
+            subject_line = copy.get("subject_line")
+
+    category_tag = " · ".join(s["label"] for s in sections) if sections else ""
+    if category_tag and subject_line:
+        subject_line = f"{category_tag} · {subject_line}"
+
+    if not sections:
+        return None
+
+    if not subject_line:
+        subject_line = "Tonight's picks"
+
+    unsubscribe = (
+        f"{SUBSCRIBERS_API_URL}/unsubscribe?email={email}&token={ADMIN_TOKEN}"
+        if SUBSCRIBERS_API_URL
+        else "#"
+    )
+
+    html = tmpl.render(
+        subject_line    = subject_line,
+        edition_date    = date_str,
+        ticker_line     = f"What 2 Watch · {date_str}",
+        sections        = sections,
+        unsubscribe_url = unsubscribe,
+    )
+    return html, subject_line
+
+
+def send_subscriber_editions(
+    editions_with_copy: dict,
+    clusters_cfg: dict,
+    tx_date: date,
+) -> None:
+    """Send one personalised email per active subscriber combining their cluster picks."""
+    if not SMTP_PASSWORD:
+        print("  [deliver] SMTP_APP_PASSWORD not set — skipping subscriber sends")
+        return
+
+    subscribers = _fetch_subscribers()
+    if not subscribers:
+        print("  [deliver] No subscribers found — skipping")
+        return
 
     sent = skipped = 0
     for sub in subscribers:
-        email    = sub.get("email", "")
+        email    = sub.get("email", "").strip()
         clusters = [c.strip() for c in sub.get("clusters", "").split("|") if c.strip()]
         if not email or not clusters:
             continue
 
-        all_items: list[dict] = []
-        subject_line = None
-
-        for cluster_id in clusters:
-            pair = editions_with_copy.get(cluster_id)
-            if not pair:
-                continue
-            edition, copy = pair
-            if not edition.items:
-                continue
-            all_items.extend(_render_items(edition, copy))
-            if subject_line is None:
-                subject_line = copy.get("subject_line")
-
-        if not all_items:
+        result = _build_subscriber_html(
+            editions_with_copy, clusters_cfg, email, clusters, tx_date
+        )
+        if result is None:
             skipped += 1
             continue
 
-        if not subject_line:
-            subject_line = "Tonight's picks"
-
-        html = tmpl.render(
-            subject_line    = subject_line,
-            edition_date    = date_str,
-            ticker_line     = f"What 2 Watch · {date_str}",
-            items           = all_items,
-            unsubscribe_url = "#",
-        )
-
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = f"What 2 Watch · {subject_line} [{email}]"
-        msg["From"]    = f"What 2 Watch <{SMTP_USER}>"
-        msg["To"]      = email
-        msg.attach(MIMEText(html, "html"))
-
-        conn.append("[Gmail]/Drafts", "\\Draft", None, msg.as_bytes())
+        html, subject_line = result
+        _send(email, f"What 2 Watch · {subject_line}", html, subject_line)
         sent += 1
+        print(f"    [deliver] → {email}")
 
-    conn.logout()
-    print(f"  [deliver] {sent} draft(s) saved, {skipped} skipped (no picks tonight)")
+    print(f"  [deliver] {sent} email(s) sent, {skipped} skipped (no picks tonight)")
+
+
+def send_admin_preview(
+    editions_with_copy: dict,
+    clusters_cfg: dict,
+    tx_date: date,
+) -> None:
+    """Send a combined preview of all cluster editions to the admin address."""
+    if not SEND_TO or not SMTP_PASSWORD:
+        return
+
+    all_clusters = list(clusters_cfg.keys())
+    result = _build_subscriber_html(
+        editions_with_copy, clusters_cfg, SEND_TO, all_clusters, tx_date
+    )
+    if result is None:
+        print("  [deliver] Admin preview: no editions to send")
+        return
+
+    html, subject_line = result
+    _send(SEND_TO, f"[Preview] What 2 Watch · {subject_line}", html, subject_line)
+    print(f"  [deliver] Admin preview sent to {SEND_TO}")
 
 
 def _send(to: str, subject: str, html: str, plain: str) -> None:

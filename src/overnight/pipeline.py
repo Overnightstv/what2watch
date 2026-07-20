@@ -25,7 +25,7 @@ from overnight.pa_schedule import build_schedule, CATCHUP
 from overnight.models import EpisodeRecord, ScheduleItem
 from overnight.selection.engine import SelectionEngine
 from overnight.copygen.generate import generate_copy
-from overnight.deliver import send_edition, send_lint_alert, draft_subscriber_editions
+from overnight.deliver import send_lint_alert, send_subscriber_editions, send_admin_preview
 from overnight.clustering.genre_classifier import build_cluster_index, classify_series
 
 CFG = yaml.safe_load(
@@ -89,11 +89,10 @@ def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool 
         print("  No episode data returned — aborting.")
         sys.exit(1)
 
-    if not dry_run:
-        CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(CACHE_PATH, "wb") as f:
-            pickle.dump(universe, f)
-        print(f"  Cache saved → {CACHE_PATH}")
+    CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(CACHE_PATH, "wb") as f:
+        pickle.dump(universe, f)
+    print(f"  Cache saved → {CACHE_PATH}")
 
     # 1b. VOD ingest — incremental, separate 14-day cache
     print("\nStep 1b: Ingesting VOD streaming data…")
@@ -105,11 +104,10 @@ def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool 
 
     vod_universe = ingest_vod_incremental(vod_existing, universe=universe, days=14, today=today)
 
-    if not dry_run:
-        VOD_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(VOD_CACHE_PATH, "wb") as f:
-            pickle.dump(vod_universe, f)
-        print(f"  VOD cache saved → {VOD_CACHE_PATH}")
+    VOD_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(VOD_CACHE_PATH, "wb") as f:
+        pickle.dump(vod_universe, f)
+    print(f"  VOD cache saved → {VOD_CACHE_PATH}")
 
     # 2. Series metrics (linear + VOD)
     print("\nStep 2: Computing series metrics…")
@@ -194,12 +192,11 @@ def run_nightly(now: datetime | None = None, dry_run: bool = False, no_pa: bool 
                 print(f"  {item.get('body')}")
             print(f"\nWhatsApp:\n{copy.get('whatsapp_compact')}")
             print("─" * 60)
-        else:
-            send_edition(edition, copy, today)
 
     if not dry_run and editions_with_copy:
-        print("\nStep 7: Saving subscriber drafts…", flush=True)
-        draft_subscriber_editions(editions_with_copy, today)
+        print("\nStep 7: Sending to subscribers…", flush=True)
+        send_subscriber_editions(editions_with_copy, clusters, today)
+        send_admin_preview(editions_with_copy, clusters, today)
 
     print("\n── Done ─────────────────────────────────────────────────────\n")
 
